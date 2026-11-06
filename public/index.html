@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RPC Railway</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0f14; color: #e1e4ea; font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+    .card { background: #151921; border: 1px solid #252b36; border-radius: 12px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    h2 { margin-bottom: 20px; color: #fff; text-align: center; }
+    label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
+    input { width: 100%; background: #0b0e13; border: 1px solid #2b3240; border-radius: 6px; padding: 12px; color: #fff; font-family: monospace; font-size: 13px; margin-bottom: 15px; outline: none; }
+    input:focus { border-color: #5865f2; }
+    .row { display: flex; gap: 10px; margin-top: 10px; }
+    button { flex: 1; padding: 14px; border: none; border-radius: 6px; color: #fff; font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-start { background: #22c55e; color: #04130a; }
+    .btn-stop { background: #ef4444; }
+    #status { margin-top: 15px; text-align: center; font-size: 13px; color: #9ca3af; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>⚡ RPC Railway</h2>
+    <label>Token Discord</label>
+    <input id="token" type="password" placeholder="Dán token...">
+    
+    <label>Dòng 1 (Details)</label>
+    <input id="line1" type="text" value="💻 Coding in JS">
+    
+    <label>Dòng 2 (State)</label>
+    <input id="line2" type="text" value="🔥 24/7 Railway">
+    
+    <label>Số giờ Fake Time</label>
+    <input id="hours" type="number" value="1700">
+
+    <div class="row">
+      <button id="btnStart" class="btn-start" onclick="start()">Bắt đầu</button>
+      <button id="btnStop" class="btn-stop" onclick="stop()" disabled>Dừng</button>
+    </div>
+    <div id="status">Chờ lệnh...</div>
+  </div>
+
+  <script>
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (data.online) {
+          document.getElementById('btnStart').disabled = true;
+          document.getElementById('btnStop').disabled = false;
+          document.getElementById('status').innerText = 'Đang treo 24/7';
+          document.getElementById('status').style.color = '#22c55e';
+        } else {
+          document.getElementById('btnStart').disabled = false;
+          document.getElementById('btnStop').disabled = true;
+          document.getElementById('status').innerText = 'Đã dừng / Chưa kết nối';
+          document.getElementById('status').style.color = '#9ca3af';
+        }
+      } catch(e){}
+    }
+
+    async function start() {
+      const token = document.getElementById('token').value;
+      if (!token) return alert('Nhập token đã!');
+      document.getElementById('status').innerText = 'Đang kết nối...';
+      document.getElementById('status').style.color = '#eab308';
+      
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: token,
+            line1: document.getElementById('line1').value,
+            line2: document.getElementById('line2').value,
+            hours: document.getElementById('hours').value
+          })
+        });
+        if (res.ok) checkStatus();
+      } catch(e) {
+        document.getElementById('status').innerText = 'Lỗi kết nối';
+        document.getElementById('status').style.color = '#ef4444';
+      }
+    }
+
+    async function stop() {
+      await fetch('/api/stop', { method: 'POST' });
+      checkStatus();
+    }
+
+    setInterval(checkStatus, 3000);
+    checkStatus();
+  </script>
+</body>
+</html>
