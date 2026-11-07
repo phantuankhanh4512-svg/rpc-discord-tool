@@ -5,67 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Discord Ultimate Tool</title>
   <style>
-    :root {
-      --bg: #1e1f22; --card: #2b2d31; --input: #111214; --text: #dbdee1;
-      --primary: #5865f2; --success: #23a55a; --danger: #da373c; --warn: #f0b232;
-    }
+    :root { --bg: #1e1f22; --card: #2b2d31; --input: #111214; --text: #dbdee1; --primary: #5865f2; --success: #23a55a; --danger: #da373c; --warn: #f0b232; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
     body { background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
-    .container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 15px; }
-    
+    .container { width: 100%; max-width: 650px; display: flex; flex-direction: column; gap: 15px; }
     .card { background: var(--card); border-radius: 8px; padding: 20px; border: 1px solid #1e1f22; }
-    h2 { font-size: 18px; color: #fff; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
-    
+    h2 { font-size: 18px; color: #fff; margin-bottom: 15px; }
     label { display: block; font-size: 12px; color: #949ba4; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; }
-    input, select, textarea { 
-      width: 100%; background: var(--input); border: 1px solid #1e1f22; border-radius: 4px; 
-      padding: 10px; color: #fff; font-size: 14px; outline: none; transition: 0.2s;
-    }
+    input, select, textarea { width: 100%; background: var(--input); border: 1px solid #1e1f22; border-radius: 4px; padding: 10px; color: #fff; font-size: 14px; outline: none; margin-bottom: 10px; }
     input:focus, select:focus { border-color: var(--primary); }
-    
     .row { display: flex; gap: 10px; }
     .row > div { flex: 1; }
-    
     .btn-group { display: flex; gap: 10px; margin-top: 15px; }
-    button { 
-      flex: 1; padding: 12px; border: none; border-radius: 4px; color: #fff; font-weight: 600; cursor: pointer; transition: 0.2s; 
-    }
+    button { flex: 1; padding: 12px; border: none; border-radius: 4px; color: #fff; font-weight: 600; cursor: pointer; transition: 0.2s; }
     .btn-start { background: var(--success); }
-    .btn-start:hover { background: #1a8f4b; }
     .btn-stop { background: var(--danger); }
-    .btn-stop:hover { background: #b52b30; }
-    .btn-secondary { background: var(--primary); }
-    .btn-secondary:hover { background: #4752c4; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-
     .tabs { display: flex; gap: 5px; margin-bottom: 15px; }
-    .tab { 
-      flex: 1; padding: 10px; background: var(--input); border: none; color: #949ba4; 
-      cursor: pointer; border-radius: 4px 4px 0 0; font-weight: 600;
-    }
+    .tab { flex: 1; padding: 10px; background: var(--input); border: none; color: #949ba4; cursor: pointer; border-radius: 4px 4px 0 0; font-weight: 600; }
     .tab.active { background: var(--card); color: #fff; border-bottom: 2px solid var(--primary); }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
-
-    .console { 
-      background: #000; color: #0f0; font-family: 'Consolas', monospace; font-size: 12px; 
-      padding: 15px; border-radius: 6px; height: 200px; overflow-y: auto; border: 1px solid #333;
-    }
+    .console { background: #000; color: #0f0; font-family: 'Consolas', monospace; font-size: 12px; padding: 15px; border-radius: 6px; height: 200px; overflow-y: auto; border: 1px solid #333; }
     .console p { margin: 2px 0; }
-    .log-info { color: #5865f2; }
-    .log-success { color: #23a55a; }
-    .log-error { color: #da373c; }
-    .log-warn { color: #f0b232; }
-    
-    .warning-box {
-      background: rgba(240, 178, 50, 0.1);
-      border-left: 3px solid var(--warn);
-      padding: 10px;
-      font-size: 12px;
-      color: var(--warn);
-      margin-bottom: 15px;
-      border-radius: 4px;
-    }
+    .warn-box { background: rgba(240, 178, 50, 0.1); border-left: 3px solid var(--warn); padding: 10px; font-size: 12px; color: var(--warn); margin-bottom: 15px; border-radius: 4px; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -73,64 +37,84 @@
 <div class="container">
   <div class="card">
     <h2>⚡ Discord Ultimate Tool</h2>
-    
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('quest')">🎯 Auto Quest</button>
-      <button class="tab" onclick="switchTab('badge')">🎮 Auto Badge</button>
+      <button class="tab active" onclick="switchTab('quest', event)">🎯 Auto Quest</button>
+      <button class="tab" onclick="switchTab('badge', event)">🎮 Auto Badge</button>
+      <button class="tab" onclick="switchTab('rpc', event)">🎭 Fake RPC</button>
     </div>
 
-    <!-- AUTO QUEST TAB -->
+    <!-- QUEST TAB -->
     <div id="tab-quest" class="tab-content active">
       <label>Discord Token</label>
-      <input id="q_token" type="password" placeholder="Dán token của bạn vào đây...">
-      
+      <input id="q_token" type="password" placeholder="Dán token...">
       <label>Webhook URL (Tùy chọn)</label>
       <input id="q_webhook" type="text" value="https://discord.com/api/webhooks/1563219916503392328/zoeP56iy_2kXQPOTFpfNbxvmr-NmjsFw8pKQh5D7ZRbkemRZOt3OOwMqGLyiRA8F4LKU">
-      
       <div class="btn-group">
         <button class="btn-start" onclick="startQuest()">▶️ Bắt đầu Quest</button>
         <button class="btn-stop" onclick="stopAll()">⏹️ Dừng tất cả</button>
       </div>
     </div>
 
-    <!-- AUTO BADGE TAB -->
+    <!-- BADGE TAB -->
     <div id="tab-badge" class="tab-content">
-      <div class="warning-box">
-        ⚠️ <strong>Lưu ý:</strong> Tool chạy trên Cloud Linux nên dùng Fingerprint giả lập. Tỷ lệ thành công thấp hơn so với chạy script Python trên máy Windows thật.
-      </div>
-
+      <div class="warn-box">⚠️ Chạy trên Cloud Linux nên dùng Fingerprint giả lập. Tỷ lệ thành công thấp hơn chạy local Windows.</div>
       <label>Discord Token</label>
       <input id="b_token" type="password" placeholder="Token...">
-      
-      <label>Cookie (cf_clearance) - <span style="color:var(--warn)">Rất quan trọng</span></label>
+      <label>Cookie (cf_clearance)</label>
       <input id="b_cookie" type="text" placeholder="__cf_clearance=...">
-
-      <div class="row" style="margin-top: 10px;">
-        <div style="flex: 3;">
-          <label>Chọn Game</label>
-          <select id="b_gameSelect" onchange="document.getElementById('b_gameId').value = this.value">
-            <option value="">-- Đang tải danh sách... --</option>
-          </select>
-        </div>
-        <div style="flex: 1; display: flex; align-items: flex-end;">
-          <button class="btn-secondary" onclick="loadGames()" style="margin-bottom: 0; height: 40px;">🔄 Tải Game</button>
-        </div>
+      <div class="row">
+        <div><label>Game ID</label><input id="b_gameid" type="text" placeholder="VD: 356875221078245376"></div>
+        <div><label>Số giờ</label><input id="b_hours" type="number" value="1700"></div>
       </div>
-
-      <label>Hoặc nhập Game ID thủ công</label>
-      <input id="b_gameId" type="text" placeholder="Ví dụ: 356875221078245376">
-
-      <label>Số giờ giả lập (Ví dụ: 1700)</label>
-      <input id="b_hours" type="number" value="1700">
-
       <div class="btn-group">
         <button class="btn-start" onclick="startBadge()">▶️ Bắt đầu Badge</button>
         <button class="btn-stop" onclick="stopAll()">⏹️ Dừng tất cả</button>
       </div>
     </div>
+
+    <!-- RPC TAB -->
+    <div id="tab-rpc" class="tab-content">
+      <div class="warn-box">💡 <b>Lưu ý:</b> Discord đôi khi chặn ảnh Custom (Large/Small Image) đối với User Token (Userbot). Nếu không hiện ảnh, hãy dùng Custom Status (Text) hoặc Bot Token.</div>
+      <label>Discord Token</label>
+      <input id="r_token" type="password" placeholder="Token...">
+      
+      <label>Loại RPC</label>
+      <select id="r_type" onchange="toggleRpcType()">
+        <option value="status">Custom Status (Chữ / Emoji)</option>
+        <option value="game">Application RPC (Game / Nhạc / Ảnh)</option>
+      </select>
+
+      <!-- Custom Status Fields -->
+      <div id="rpc-status-fields">
+        <label>Trạng thái (VD: Đang code tool...)</label>
+        <input id="r_state" type="text" placeholder="Text hiển thị...">
+      </div>
+
+      <!-- Application RPC Fields -->
+      <div id="rpc-game-fields" class="hidden">
+        <label>Tên Ứng Dụng / Game</label>
+        <input id="r_name" type="text" placeholder="VD: Cyberpunk 2077">
+        <div class="row">
+          <div><label>Details</label><input id="r_details" type="text" placeholder="Đang chơi..."></div>
+          <div><label>State</label><input id="r_game_state" type="text" placeholder="In Match..."></div>
+        </div>
+        <div class="row">
+          <div><label>Large Image Key</label><input id="r_large_img" type="text" placeholder="mp_lobby"></div>
+          <div><label>Small Image Key</label><input id="r_small_img" type="text" placeholder="legend_rank"></div>
+        </div>
+        <div class="row">
+          <div><label>Button 1 Label</label><input id="r_btn1_l" type="text" placeholder="Xem ngay"></div>
+          <div><label>Button 1 URL</label><input id="r_btn1_u" type="text" placeholder="https://..."></div>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn-start" onclick="startRPC()">🎭 Bật Fake RPC</button>
+        <button class="btn-stop" onclick="stopAll()">⏹️ Tắt RPC</button>
+      </div>
+    </div>
   </div>
 
-  <!-- LOG CONSOLE -->
   <div class="card">
     <h2>📟 System Logs</h2>
     <div class="console" id="console"></div>
@@ -138,100 +122,76 @@
 </div>
 
 <script>
-  function switchTab(tab) {
+  function switchTab(tab, e) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    e.target.classList.add('active');
     document.getElementById(`tab-${tab}`).classList.add('active');
   }
 
-  function log(msg, type = 'info') {
-    const consoleDiv = document.getElementById('console');
-    const time = new Date().toLocaleTimeString();
-    const p = document.createElement('p');
-    p.className = `log-${type}`;
-    p.innerHTML = `<span style="color:#666">[${time}]</span> ${msg}`;
-    consoleDiv.appendChild(p);
-    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+  function toggleRpcType() {
+    const type = document.getElementById('r_type').value;
+    document.getElementById('rpc-status-fields').classList.toggle('hidden', type !== 'status');
+    document.getElementById('rpc-game-fields').classList.toggle('hidden', type !== 'game');
   }
 
-  async function loadGames() {
-    log('🔄 Đang tải danh sách game từ Discord...', 'info');
-    try {
-      const res = await fetch('/api/games');
-      const games = await res.json();
-      const select = document.getElementById('b_gameSelect');
-      select.innerHTML = '<option value="">-- Chọn Game --</option>';
-      
-      games.slice(0, 100).forEach(game => { // Giới hạn 100 game đầu để dropdown không bị lag
-        const option = document.createElement('option');
-        option.value = game.id;
-        option.textContent = `${game.name} (ID: ${game.id})`;
-        select.appendChild(option);
-      });
-      
-      log(`✅ Đã tải thành công ${games.length} game!`, 'success');
-    } catch (e) {
-      log('❌ Không thể tải danh sách game!', 'error');
-    }
+  function log(msg, type = 'info') {
+    const c = document.getElementById('console');
+    const p = document.createElement('p');
+    p.style.color = type === 'error' ? '#da373c' : type === 'success' ? '#23a55a' : '#5865f2';
+    p.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    c.appendChild(p);
+    c.scrollTop = c.scrollHeight;
   }
 
   async function startQuest() {
     const token = document.getElementById('q_token').value;
-    const webhook = document.getElementById('q_webhook').value;
-    if (!token) return log('❌ Vui lòng nhập Token!', 'error');
-
-    log('🚀 Đang gửi yêu cầu bắt đầu AutoQuest...', 'info');
-    try {
-      const res = await fetch('/api/start-quest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, webhook })
-      });
-      const data = await res.json();
-      if (data.ok) log('✅ AutoQuest đã chạy nền. Theo dõi log bên dưới.', 'success');
-      else log(`❌ Lỗi: ${data.error}`, 'error');
-    } catch (e) {
-      log('❌ Không thể kết nối đến server!', 'error');
-    }
+    if (!token) return log('❌ Thiếu Token!', 'error');
+    log('🚀 Đang gửi lệnh AutoQuest...', 'info');
+    await fetch('/api/start-quest', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token, webhook: document.getElementById('q_webhook').value }) });
+    log('✅ AutoQuest đang chạy ngầm.', 'success');
   }
 
   async function startBadge() {
     const token = document.getElementById('b_token').value;
-    const cookie = document.getElementById('b_cookie').value;
-    const gameId = document.getElementById('b_gameId').value;
-    const hours = document.getElementById('b_hours').value;
+    const gameId = document.getElementById('b_gameid').value;
+    if (!token || !gameId) return log('❌ Thiếu Token hoặc Game ID!', 'error');
+    log('🚀 Đang gửi lệnh AutoBadge...', 'info');
+    await fetch('/api/start-badge', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ 
+        token, cookie: document.getElementById('b_cookie').value, gameId, hours: document.getElementById('b_hours').value 
+    })});
+    log('✅ AutoBadge đang chạy.', 'success');
+  }
 
-    if (!token || !gameId) return log('❌ Vui lòng nhập đầy đủ Token và Game ID!', 'error');
-
-    log(`🚀 Đang gửi yêu cầu AutoBadge cho Game ID: ${gameId}...`, 'info');
-    try {
-      const res = await fetch('/api/start-badge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, cookie, gameId, hours })
-      });
-      const data = await res.json();
-      if (data.ok) log('✅ AutoBadge đã chạy. Kiểm tra Discord sau vài phút.', 'success');
-      else log(`❌ Lỗi: ${data.error}`, 'error');
-    } catch (e) {
-      log('❌ Không thể kết nối đến server!', 'error');
+  async function startRPC() {
+    const token = document.getElementById('r_token').value;
+    if (!token) return log('❌ Thiếu Token!', 'error');
+    
+    const type = document.getElementById('r_type').value;
+    const rpcData = { type };
+    
+    if (type === 'status') {
+        rpcData.state = document.getElementById('r_state').value;
+    } else {
+        rpcData.name = document.getElementById('r_name').value;
+        rpcData.details = document.getElementById('r_details').value;
+        rpcData.state = document.getElementById('r_game_state').value;
+        rpcData.large_image = document.getElementById('r_large_img').value;
+        rpcData.small_image = document.getElementById('r_small_img').value;
+        rpcData.btn1_label = document.getElementById('r_btn1_l').value;
+        rpcData.btn1_url = document.getElementById('r_btn1_u').value;
     }
+
+    log('🔌 Đang kết nối Gateway Discord...', 'info');
+    const res = await fetch('/api/start-rpc', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ token, rpcData }) });
+    if (res.ok) log('🎭 Fake RPC đã được kích hoạt! Kiểm tra Discord của bạn.', 'success');
   }
 
   async function stopAll() {
-    log('⏹️ Đang gửi lệnh dừng tất cả tác vụ...', 'warn');
+    log('⏹️ Đang ngắt mọi kết nối...', 'warn');
     await fetch('/api/stop', { method: 'POST' });
-    log('✅ Đã dừng mọi tác vụ đang chạy.', 'success');
+    log('✅ Đã dừng tất cả (Quest, Badge, RPC).', 'success');
   }
-
-  // Tự động tải game khi mở tab Badge
-  document.querySelector('.tab:nth-child(2)').addEventListener('click', () => {
-    if (document.getElementById('b_gameSelect').options.length <= 1) {
-      loadGames();
-    }
-  });
 </script>
-
 </body>
 </html>
