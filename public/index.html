@@ -3,38 +3,125 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RPC Railway</title>
+  <title>RPC Controller</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0d0f14; color: #e1e4ea; font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-    .card { background: #151921; border: 1px solid #252b36; border-radius: 12px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-    h2 { margin-bottom: 20px; color: #fff; text-align: center; }
-    label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
-    input { width: 100%; background: #0b0e13; border: 1px solid #2b3240; border-radius: 6px; padding: 12px; color: #fff; font-family: monospace; font-size: 13px; margin-bottom: 15px; outline: none; }
-    input:focus { border-color: #5865f2; }
-    .row { display: flex; gap: 10px; margin-top: 10px; }
-    button { flex: 1; padding: 14px; border: none; border-radius: 6px; color: #fff; font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-    button:active { transform: scale(0.97); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: #0d0f14; color: #e1e4ea; display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
+    .container { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 20px; }
+    .card { background: #151921; border: 1px solid #252b36; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    h2 { font-size: 18px; color: #fff; margin-bottom: 15px; text-align: center; }
+    label { display: block; font-size: 11px; color: #9ca3af; margin-bottom: 6px; text-transform: uppercase; font-weight: bold; margin-top: 15px; }
+    label:first-of-type { margin-top: 0; }
+    input, select { width: 100%; background: #0b0e13; border: 1px solid #2b3240; border-radius: 6px; padding: 10px 12px; color: #fff; font-family: monospace; font-size: 13px; outline: none; }
+    input:focus, select:focus { border-color: #5865f2; }
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+    button { width: 100%; padding: 14px; border: none; border-radius: 6px; color: #fff; font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-top: 20px; }
     .btn-start { background: #22c55e; color: #04130a; }
     .btn-stop { background: #ef4444; }
-    #status { margin-top: 15px; text-align: center; font-size: 13px; color: #9ca3af; font-weight: 600; }
+    #status { margin-top: 15px; text-align: center; font-size: 13px; font-weight: 600; color: #9ca3af; }
+    
+    /* Preview Card */
+    .preview { background: #2b2d31; border-radius: 8px; padding: 15px; display: flex; gap: 15px; margin-top: 20px; position: relative; }
+    .preview img { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; background: #1e1f22; }
+    .preview-info { display: flex; flex-direction: column; justify-content: center; gap: 4px; flex: 1; }
+    .preview-title { color: #f2f3f5; font-weight: bold; font-size: 15px; }
+    .preview-desc { color: #dbdee1; font-size: 13px; }
+    .preview-time { color: #23a55a; font-size: 12px; margin-top: 4px; font-family: monospace; display: flex; align-items: center; gap: 5px;}
+    .preview-buttons { display: flex; gap: 8px; margin-top: 15px; }
+    .preview-buttons button { margin: 0; padding: 8px; background: #4e5058; color: #fff; font-weight: 500; font-size: 13px; }
   </style>
 </head>
 <body>
+<div class="container">
+  
+  <!-- KHUNG CẤU HÌNH -->
   <div class="card">
-    <h2>⚡ RPC Railway</h2>
+    <h2>⚡ RPC Configurator</h2>
+    
     <label>Token Discord</label>
     <input id="token" type="password" placeholder="Dán token...">
-    
-    <label>Dòng 1 (Details)</label>
-    <input id="line1" type="text" value="💻 Coding in JS">
-    
-    <label>Dòng 2 (State)</label>
-    <input id="line2" type="text" value="🔥 24/7 Railway">
-    
+
+    <label>Chọn mẫu nhanh (Templates)</label>
+    <select id="template" onchange="applyTemplate()">
+      <option value="">-- Tự cấu hình --</option>
+      <option value="vscode">Visual Studio Code</option>
+      <option value="minecraft">Minecraft</option>
+      <option value="cs2">Counter-Strike 2</option>
+      <option value="valorant">Valorant</option>
+      <option value="spotify">Spotify</option>
+    </select>
+
+    <label>Loại trạng thái (Activity Type)</label>
+    <select id="activityType">
+      <option value="0">Đang chơi (PLAYING)</option>
+      <option value="1">Phát trực tiếp (STREAMING)</option>
+      <option value="2">Đang nghe (LISTENING)</option>
+      <option value="3">Đang xem (WATCHING)</option>
+    </select>
+
+    <label>Tên Game / Tiêu đề (Name)</label>
+    <input id="name" type="text" value="Visual Studio Code">
+
+    <label>Dòng chữ chi tiết 1 (Details)</label>
+    <input id="details" type="text" value="Workspace: tinhdiem-bot">
+
+    <label>Dòng chữ 2 (State - xoay vòng mỗi dòng 1 hàng)</label>
+    <textarea id="state" rows="3" style="width:100%; background:#0b0e13; border:1px solid #2b3240; border-radius:6px; padding:10px; color:#fff; font-family:monospace; outline:none;">Editing server.js
+Editing td.js
+Editing main.js</textarea>
+
+    <label>Link ảnh lớn (Large Image URL)</label>
+    <input id="largeImage" type="text" value="https://upload.wikimedia.org/wikipedia/commons/9/9a/Visual_Studio_Code_1.35_icon.svg">
+
+    <label>Link ảnh nhỏ (Small Image URL)</label>
+    <input id="smallImage" type="text" placeholder="Bỏ trống nếu không dùng...">
+
     <label>Số giờ Fake Time</label>
     <input id="hours" type="number" value="1700">
+
+    <div class="row">
+      <div>
+        <label>Nền tảng (Platform)</label>
+        <select id="platform">
+          <option value="desktop">Máy tính</option>
+          <option value="mobile">Điện thoại</option>
+        </select>
+      </div>
+      <div>
+        <label>Trạng thái (Status)</label>
+        <select id="statusSelect">
+          <option value="online">Online</option>
+          <option value="idle">Idle</option>
+          <option value="dnd">DND</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Độ trễ xoay vòng (Giây)</label>
+    <input id="delay" type="number" value="4">
+
+    <div class="row" style="margin-top: 15px;">
+      <div>
+        <label>Nút bấm 1 (Tên)</label>
+        <input id="btn1Label" type="text" placeholder="My Website">
+      </div>
+      <div>
+        <label>Nút bấm 1 (Link)</label>
+        <input id="btn1Url" type="text" placeholder="https://...">
+      </div>
+    </div>
+    
+    <div class="row" style="margin-top: 10px;">
+      <div>
+        <label>Nút bấm 2 (Tên)</label>
+        <input id="btn2Label" type="text" placeholder="Discord Server">
+      </div>
+      <div>
+        <label>Nút bấm 2 (Link)</label>
+        <input id="btn2Url" type="text" placeholder="https://...">
+      </div>
+    </div>
 
     <div class="row">
       <button id="btnStart" class="btn-start" onclick="start()">Bắt đầu</button>
@@ -43,56 +130,162 @@
     <div id="status">Chờ lệnh...</div>
   </div>
 
-  <script>
-    async function checkStatus() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        if (data.online) {
-          document.getElementById('btnStart').disabled = true;
-          document.getElementById('btnStop').disabled = false;
-          document.getElementById('status').innerText = 'Đang treo 24/7';
-          document.getElementById('status').style.color = '#22c55e';
-        } else {
-          document.getElementById('btnStart').disabled = false;
-          document.getElementById('btnStop').disabled = true;
-          document.getElementById('status').innerText = 'Đã dừng / Chưa kết nối';
-          document.getElementById('status').style.color = '#9ca3af';
-        }
-      } catch(e){}
-    }
+  <!-- KHUNG PREVIEW -->
+  <div class="card">
+    <h2>Xem trước (Live Preview)</h2>
+    <div class="preview">
+      <img id="prevImg" src="https://upload.wikimedia.org/wikipedia/commons/9/9a/Visual_Studio_Code_1.35_icon.svg" alt="img">
+      <div class="preview-info">
+        <div class="preview-title" id="prevName">Visual Studio Code</div>
+        <div class="preview-desc" id="prevDetails">Workspace: tinhdiem-bot</div>
+        <div class="preview-desc" id="prevState">Editing server.js</div>
+        <div class="preview-time">
+          <span style="font-size:14px;">🎮</span> <span id="prevTime">1700:00:00</span>
+        </div>
+      </div>
+    </div>
+    <div class="preview-buttons">
+      <button id="prevBtn1" style="display:none;">Button 1</button>
+      <button id="prevBtn2" style="display:none;">Button 2</button>
+    </div>
+  </div>
 
-    async function start() {
-      const token = document.getElementById('token').value;
-      if (!token) return alert('Nhập token đã!');
-      document.getElementById('status').innerText = 'Đang kết nối...';
-      document.getElementById('status').style.color = '#eab308';
-      
-      try {
-        const res = await fetch('/api/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: token,
-            line1: document.getElementById('line1').value,
-            line2: document.getElementById('line2').value,
-            hours: document.getElementById('hours').value
-          })
-        });
-        if (res.ok) checkStatus();
-      } catch(e) {
-        document.getElementById('status').innerText = 'Lỗi kết nối';
-        document.getElementById('status').style.color = '#ef4444';
-      }
-    }
+</div>
 
-    async function stop() {
-      await fetch('/api/stop', { method: 'POST' });
-      checkStatus();
-    }
+<script>
+const $ = id => document.getElementById(id);
 
-    setInterval(checkStatus, 3000);
-    checkStatus();
-  </script>
+// Hàm cập nhật Preview trực tiếp khi gõ
+function updatePreview() {
+  $('prevName').innerText = $('name').value || 'Tên App';
+  $('prevDetails').innerText = $('details').value || 'Details';
+  
+  const states = $('state').value.split('\n').filter(x => x.trim() !== '');
+  $('prevState').innerText = states.length > 0 ? states[0] : 'State';
+  
+  if ($('largeImage').value) {
+    $('prevImg').src = $('largeImage').value;
+    $('prevImg').style.display = 'block';
+  } else {
+    $('prevImg').style.display = 'none';
+  }
+
+  // Nút bấm
+  if ($('btn1Label').value) {
+    $('prevBtn1').style.display = 'block';
+    $('prevBtn1').innerText = $('btn1Label').value;
+  } else {
+    $('prevBtn1').style.display = 'none';
+  }
+  
+  if ($('btn2Label').value) {
+    $('prevBtn2').style.display = 'block';
+    $('prevBtn2').innerText = $('btn2Label').value;
+  } else {
+    $('prevBtn2').style.display = 'none';
+  }
+}
+
+// Gắn sự kiện để preview thay đổi theo thời gian thực
+['name', 'details', 'state', 'largeImage', 'btn1Label', 'btn2Label'].forEach(id => {
+  $(id).addEventListener('input', updatePreview);
+});
+
+// Chạy đếm giờ ở preview
+setInterval(() => {
+  const hours = parseFloat($('hours').value) || 0;
+  const totalSecs = Math.floor(Date.now() / 1000) - (hours * 3600);
+  const h = Math.floor((Date.now()/1000 - totalSecs) / 3600);
+  const m = Math.floor(((Date.now()/1000 - totalSecs) % 3600) / 60);
+  const s = Math.floor((Date.now()/1000 - totalSecs) % 60);
+  $('prevTime').innerText = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}, 1000);
+
+function applyTemplate() {
+  const t = $('template').value;
+  if (t === 'vscode') {
+    $('name').value = 'Visual Studio Code';
+    $('details').value = 'Workspace: tinhdiem-bot';
+    $('state').value = 'Editing server.js\nEditing td.js\nEditing main.js';
+    $('largeImage').value = 'https://upload.wikimedia.org/wikipedia/commons/9/9a/Visual_Studio_Code_1.35_icon.svg';
+  } else if (t === 'minecraft') {
+    $('name').value = 'Minecraft';
+    $('details').value = 'Survival Mode';
+    $('state').value = 'Building a house\nMining diamonds';
+    $('largeImage').value = 'https://upload.wikimedia.org/wikipedia/en/5/51/Minecraft_cover.png';
+  } else if (t === 'cs2') {
+    $('name').value = 'Counter-Strike 2';
+    $('details').value = 'Premier Mode';
+    $('state').value = 'Competitive\nDeathmatch';
+    $('largeImage').value = 'https://upload.wikimedia.org/wikipedia/en/f/f2/Counter-Strike_2_cover_art.jpg';
+  }
+  updatePreview();
+}
+
+async function checkStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    if (data.online) {
+      $('btnStart').disabled = true;
+      $('btnStop').disabled = false;
+      $('status').innerText = 'Đang treo 24/7';
+      $('status').style.color = '#22c55e';
+    } else {
+      $('btnStart').disabled = false;
+      $('btnStop').disabled = true;
+      $('status').innerText = 'Đã dừng / Chưa kết nối';
+      $('status').style.color = '#9ca3af';
+    }
+  } catch(e){}
+}
+
+async function start() {
+  const token = $('token').value;
+  if (!token) return alert('Nhập token đã!');
+  
+  $('status').innerText = 'Đang kết nối...';
+  $('status').style.color = '#eab308';
+  
+  const states = $('state').value.split('\n').filter(x => x.trim() !== '');
+  
+  const payload = {
+    token: token,
+    name: $('name').value,
+    details: $('details').value,
+    states: states,
+    largeImage: $('largeImage').value,
+    smallImage: $('smallImage').value,
+    hours: $('hours').value,
+    type: $('activityType').value,
+    platform: $('platform').value,
+    status: $('statusSelect').value,
+    delay: $('delay').value,
+    btn1: { label: $('btn1Label').value, url: $('btn1Url').value },
+    btn2: { label: $('btn2Label').value, url: $('btn2Url').value }
+  };
+
+  try {
+    const res = await fetch('/api/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) checkStatus();
+  } catch(e) {
+    $('status').innerText = 'Lỗi kết nối';
+    $('status').style.color = '#ef4444';
+  }
+}
+
+async function stop() {
+  await fetch('/api/stop', { method: 'POST' });
+  checkStatus();
+}
+
+updatePreview();
+setInterval(checkStatus, 3000);
+checkStatus();
+</script>
 </body>
 </html>
