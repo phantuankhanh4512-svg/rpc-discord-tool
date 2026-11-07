@@ -1,167 +1,97 @@
-const express = require('express');
-const WebSocket = require('ws');
-const path = require('path');
+// ─── AUTOBADGE WORKER (OPTIMIZED FOR CLOUD/LINUX) ─────────────────
+async function runAutoBadge(taskId, token, cookie, gameId, hours, logCallback) {
+    try {
+        logCallback("🎮 Bắt đầu giả lập chơi game (Chế độ Cloud)...");
+        
+        // Lưu ý: Trên Cloud (Linux), ta không thể tạo fingerprint thật từ .exe Windows.
+        // Ta sẽ dùng một fingerprint "giả" nhưng có cấu trúc đúng để tránh bị lỗi cú pháp.
+        // Tỷ lệ thành công thấp hơn máy thật, nhưng vẫn thử được.
+        
+        const durationMs = hours * 3600 * 1000;
+        const now = Date.now();
+        const startTime = now - durationMs;
+        const sessionId = "cloud-session-" + Math.random().toString(36).substring(7);
 
-const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+        // Fingerprint giả lập an toàn cho Linux (Base64 encoded dummy data)
+        // Đây là fingerprint mẫu thường thấy, không gắn với máy cụ thể để tránh conflict
+        const fakeFingerprint = "AQAAAAEAAABgAAAAYQAAAGIAAABjAAAAZAAAAGUAAABmAAAAZwAAAGgAAABpAAAAagAAAGsAAABsAAAAbQAAAG4AAABvAAAAcAAAAHEAAABzAAAAdAAAAHUAAAB2AAAAdwAAAHgAAAB5AAAAeg=="; 
 
-let activeSocket = null;
-let heartbeatTimer = null;
-let rotateTimer = null;
+        const events = [
+            {
+                type: "launch_game",
+                properties: {
+                    game_id: gameId,
+                    executable_fingerprint: fakeFingerprint, 
+                    client_track_timestamp: startTime,
+                    client_heartbeat_session_id: sessionId,
+                    game_platform: "desktop",
+                    detection_method: "verified_game"
+                }
+            },
+            {
+                type: "running_game_heartbeat",
+                properties: {
+                    game_id: gameId,
+                    duration_tracked_ms: durationMs,
+                    final_heartbeat: true,
+                    client_track_timestamp: now,
+                    client_heartbeat_session_id: sessionId,
+                    initial_heartbeat: false
+                }
+            }
+        ];
 
-function stopCurrentSocket() {
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  if (rotateTimer) clearInterval(rotateTimer);
-  if (activeSocket) {
-    try { activeSocket.terminate(); } catch(e){}
-    activeSocket = null;
-  }
+        // Lấy Analytics Token (Bắt buộc)
+        let analyticsToken = "";
+        try {
+            const meRes = await fetchWithTimeout('https://discord.com/api/v9/users/@me?with_analytics_token=true', {
+                headers: { 
+                    'Authorization': token,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                analyticsToken = meData.analytics_token;
+            }
+        } catch (e) {
+            logCallback("⚠️ Không lấy được Analytics Token.");
+        }
+
+        if (!analyticsToken) {
+             logCallback("❌ Thiếu Analytics Token, không thể gửi sự kiện.");
+             return;
+        }
+
+        const headers = {
+            'Authorization': token,
+            'Cookie': cookie || '', // Cookie cf_clearance rất quan trọng
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.900 Chrome/108.0.5359.124 Electron/22.0.3 Safari/537.36',
+            'X-Super-Properties': 'eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MDAiLCJvc192ZXJzaW9uIjoiMTAuMC4xOTA0MiIsIm9zX2FyY2giOiJ4NjQiLCJzeXN0ZW1fbG9jYWxlIjoiZW4tVVMiLCJicm93c2VyX3VzZXJfYWdlbnQiOiIiLCJicm93c2VyX3ZlcnNpb24iOiIiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo5MDAsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9',
+            'Origin': 'https://discord.com',
+            'Referer': 'https://discord.com/channels/@me'
+        };
+
+        const res = await fetchWithTimeout('https://discord.com/api/v9/science', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ 
+                token: analyticsToken, 
+                events: events 
+            })
+        });
+
+        if (res.status === 204 || res.status === 200) {
+            logCallback(`✅ Đã gửi tín hiệu chơi game ${hours} giờ cho ID: ${gameId}`);
+            logCallback("⚠️ Lưu ý: Vì chạy trên Cloud Linux, badge có thể không hiện ngay hoặc bị Discord bỏ qua nếu thiếu Fingerprint thật.");
+        } else {
+            const errText = await res.text();
+            logCallback(`⚠️ Discord phản hồi: ${res.status} - ${errText}`);
+        }
+    } catch (err) {
+        logCallback(`❌ Lỗi AutoBadge: ${err.message}`);
+    } finally {
+        activeTasks.delete(taskId);
+    }
 }
-
-app.post('/api/start', (req, res) => {
-  stopCurrentSocket(); 
-  
-  const data = req.body;
-  if (!data.token) return res.status(400).json({ error: 'Thiếu token' });
-
-  const ws = new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json');
-  activeSocket = ws;
-  let seq = null;
-  let idx = 0;
-
-  let fakeStartTime = Date.now();
-  if (data.hours && parseInt(data.hours) > 0) {
-      const offset = parseInt(data.hours) * 3600 * 1000;
-      const calcTime = Date.now() - offset;
-      if (calcTime > 0) fakeStartTime = calcTime;
-  }
-
-  const states = data.states && data.states.length > 0 ? data.states : [''];
-  
-  const cleanUrl = (url) => {
-    if (!url) return undefined;
-    return url.split('?')[0]; 
-  };
-
-  const buildActivity = () => {
-    let actName = (data.name || '').trim();
-    if (!actName) actName = 'Visual Studio Code';
-
-    let act = {
-      name: actName,
-      type: parseInt(data.type) || 0,
-      timestamps: { start: fakeStartTime },
-      instance: false
-    };
-
-    if (data.details && data.details.trim()) act.details = data.details.trim();
-    const currentState = states[idx % states.length];
-    if (currentState && currentState.trim()) act.state = currentState.trim();
-    
-    act.assets = {};
-    const isDirectImage = (url) => url && /^https?:\/\//i.test(url) && /\.(jpeg|jpg|gif|png|webp)/i.test(url);
-    
-    if (isDirectImage(data.largeImage)) {
-      act.assets.large_image = cleanUrl(data.largeImage);
-      act.assets.large_text = actName;
-    }
-    if (isDirectImage(data.smallImage)) {
-      act.assets.small_image = cleanUrl(data.smallImage);
-    }
-    if (Object.keys(act.assets).length === 0) delete act.assets;
-
-    let btns = [];
-    const isValidUrl = (url) => url && (url.startsWith('https://') || url.startsWith('http://'));
-    if (data.btn1 && data.btn1.label && data.btn1.label.trim() && isValidUrl(data.btn1.url)) {
-        btns.push({ label: data.btn1.label.trim(), url: data.btn1.url.trim() });
-    }
-    if (data.btn2 && data.btn2.label && data.btn2.label.trim() && isValidUrl(data.btn2.url)) {
-        btns.push({ label: data.btn2.label.trim(), url: data.btn2.url.trim() });
-    }
-    if (btns.length > 0) act.buttons = btns;
-
-    return act;
-  };
-
-  ws.on('open', () => {
-    if (states.length > 1) {
-      rotateTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          idx++;
-          console.log(`[*] Đang đổi sang dòng: ${states[idx % states.length]}`);
-          ws.send(JSON.stringify({
-            op: 3,
-            d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false }
-          }));
-        }
-      }, (parseInt(data.delay) || 4) * 1000);
-    }
-  });
-
-  ws.on('message', (raw) => {
-    const pkt = JSON.parse(raw);
-    if (pkt.s) seq = pkt.s;
-
-    if (pkt.op === 10) {
-      heartbeatTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 1, d: seq }));
-      }, pkt.d.heartbeat_interval);
-
-      const identifyProps = { os: data.platform || 'desktop', browser: 'Chrome', device: '' };
-      
-      const currentAct = buildActivity();
-      console.log("=> PAYLOAD LÚC BẮT ĐẦU:", JSON.stringify(currentAct, null, 2));
-
-      ws.send(JSON.stringify({
-        op: 2,
-        d: {
-          token: data.token,
-          capabilities: 16381,
-          properties: identifyProps,
-          presence: {
-            status: data.status || 'online',
-            since: 0,
-            activities: [currentAct],
-            afk: false
-          }
-        }
-      }));
-      if (!res.headersSent) res.json({ ok: true, msg: 'Đã kết nối' });
-    }
-    
-    if (pkt.t === 'READY') {
-      ws.send(JSON.stringify({
-          op: 3,
-          d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false }
-      }));
-    }
-
-    if (pkt.op === 9) {
-      stopCurrentSocket();
-    }
-  });
-
-  ws.on('close', () => {
-    clearInterval(heartbeatTimer);
-    clearInterval(rotateTimer);
-  });
-  
-  ws.on('error', (err) => {
-    stopCurrentSocket();
-    if (!res.headersSent) res.status(500).json({ error: err.message });
-  });
-});
-
-app.get('/api/status', (req, res) => {
-  const isOnline = activeSocket && activeSocket.readyState === WebSocket.OPEN;
-  res.json({ online: !!isOnline });
-});
-
-app.post('/api/stop', (req, res) => {
-  stopCurrentSocket();
-  res.json({ ok: true });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
