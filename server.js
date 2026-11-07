@@ -8,52 +8,70 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let activeSocket = null;
 let heartbeatTimer = null;
+let rotateTimer = null;
 
 app.post('/api/start', (req, res) => {
-  const { token, line1, line2, hours } = req.body;
-  if (!token) return res.status(400).json({ error: 'Thiếu token' });
+  const data = req.body;
+  if (!data.token) return res.status(400).json({ error: 'Thiếu token' });
   
   if (activeSocket) {
     try { activeSocket.close(); } catch(e){}
     clearInterval(heartbeatTimer);
+    clearInterval(rotateTimer);
   }
 
-  const startMs = hours > 0 ? Date.now() - (hours * 3600 * 1000) : Date.now();
   const ws = new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json');
   activeSocket = ws;
   let seq = null;
+  let idx = 0;
 
-  ws.on('message', (data) => {
-    const pkt = JSON.parse(data);
+  // Hàm build dữ liệu activity
+  const buildActivity = () => {
+    let act = {
+      name: data.name || 'App',
+      type: parseInt(data.type) || 0,
+      details: data.details || '',
+      state: data.states[idx % data.states.length] || '',
+      timestamps: { start: data.hours > 0 ? Date.now() - (data.hours * 3600 * 1000) : Date.now() },
+      assets: {
+        large_image: data.largeImage || undefined,
+        large_text: data.name || '',
+        small_image: data.smallImage || undefined,
+        small_text: data.details || ''
+      },
+      instance: false
+    };
+
+    // Chỉ thêm buttons nếu có nhập
+    let btns = [];
+    if (data.btn1 && data.btn1.label && data.btn1.url) btns.push({ label: data.btn1.label, url: data.btn1.url });
+    if (data.btn2 && data.btn2.label && data.btn2.url) btns.push({ label: data.btn2.label, url: data.btn2.url });
+    if (btns.length > 0) act.buttons = btns;
+
+    return act;
+  };
+
+  ws.on('message', (raw) => {
+    const pkt = JSON.parse(raw);
     if (pkt.s) seq = pkt.s;
 
     if (pkt.op === 10) {
       heartbeatTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ op: 1, d: seq }));
-        }
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 1, d: seq }));
       }, pkt.d.heartbeat_interval);
 
+      const identifyProps = { os: data.platform || 'desktop', browser: 'Chrome', device: '' };
+      
       ws.send(JSON.stringify({
         op: 2,
         d: {
-          token: token,
+          token: data.token,
           capabilities: 16381,
-          properties: { os: 'Windows', browser: 'Chrome', device: '' },
+          properties: identifyProps,
           presence: {
-            status: 'online',
+            status: data.status || 'online',
             since: 0,
-            activities: [{
-              name: 'Visual Studio Code',
-              type: 0,
-              details: line1 || '💻 Coding',
-              state: line2 || '🔥 24/7',
-              timestamps: { start: startMs },
-              assets: {
-                large_image: 'https://raw.githubusercontent.com/microsoft/vscode/main/resources/linux/code.png',
-                large_text: 'VS Code'
-              }
-            }],
+            activities: [buildActivity()],
             afk: false
           }
         }
@@ -62,9 +80,34 @@ app.post('/api/start', (req, res) => {
     }
   });
 
-  ws.on('close', () => clearInterval(heartbeatTimer));
+  ws.on('open', () => {
+    // Bắt đầu xoay vòng nếu có nhiều hơn 1 state
+    if (data.states && data.states.length > 1) {
+      rotateTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          idx++;
+          ws.send(JSON.stringify({
+            op: 3,
+            d: {
+              since: 0,
+              activities: [buildActivity()],
+              status: data.status || 'online',
+              afk: false
+            }
+          }));
+        }
+      }, (parseInt(data.delay) || 4) * 1000);
+    }
+  });
+
+  ws.on('close', () => {
+    clearInterval(heartbeatTimer);
+    clearInterval(rotateTimer);
+  });
+  
   ws.on('error', (err) => {
     clearInterval(heartbeatTimer);
+    clearInterval(rotateTimer);
     try { res.status(500).json({ error: err.message }); } catch(e){}
   });
 });
@@ -78,6 +121,7 @@ app.post('/api/stop', (req, res) => {
   if (activeSocket) {
     try { activeSocket.close(); } catch(e){}
     clearInterval(heartbeatTimer);
+    clearInterval(rotateTimer);
     activeSocket = null;
   }
   res.json({ ok: true });
