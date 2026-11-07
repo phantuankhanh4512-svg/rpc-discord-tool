@@ -1,97 +1,237 @@
-// ─── AUTOBADGE WORKER (OPTIMIZED FOR CLOUD/LINUX) ─────────────────
-async function runAutoBadge(taskId, token, cookie, gameId, hours, logCallback) {
-    try {
-        logCallback("🎮 Bắt đầu giả lập chơi game (Chế độ Cloud)...");
-        
-        // Lưu ý: Trên Cloud (Linux), ta không thể tạo fingerprint thật từ .exe Windows.
-        // Ta sẽ dùng một fingerprint "giả" nhưng có cấu trúc đúng để tránh bị lỗi cú pháp.
-        // Tỷ lệ thành công thấp hơn máy thật, nhưng vẫn thử được.
-        
-        const durationMs = hours * 3600 * 1000;
-        const now = Date.now();
-        const startTime = now - durationMs;
-        const sessionId = "cloud-session-" + Math.random().toString(36).substring(7);
-
-        // Fingerprint giả lập an toàn cho Linux (Base64 encoded dummy data)
-        // Đây là fingerprint mẫu thường thấy, không gắn với máy cụ thể để tránh conflict
-        const fakeFingerprint = "AQAAAAEAAABgAAAAYQAAAGIAAABjAAAAZAAAAGUAAABmAAAAZwAAAGgAAABpAAAAagAAAGsAAABsAAAAbQAAAG4AAABvAAAAcAAAAHEAAABzAAAAdAAAAHUAAAB2AAAAdwAAAHgAAAB5AAAAeg=="; 
-
-        const events = [
-            {
-                type: "launch_game",
-                properties: {
-                    game_id: gameId,
-                    executable_fingerprint: fakeFingerprint, 
-                    client_track_timestamp: startTime,
-                    client_heartbeat_session_id: sessionId,
-                    game_platform: "desktop",
-                    detection_method: "verified_game"
-                }
-            },
-            {
-                type: "running_game_heartbeat",
-                properties: {
-                    game_id: gameId,
-                    duration_tracked_ms: durationMs,
-                    final_heartbeat: true,
-                    client_track_timestamp: now,
-                    client_heartbeat_session_id: sessionId,
-                    initial_heartbeat: false
-                }
-            }
-        ];
-
-        // Lấy Analytics Token (Bắt buộc)
-        let analyticsToken = "";
-        try {
-            const meRes = await fetchWithTimeout('https://discord.com/api/v9/users/@me?with_analytics_token=true', {
-                headers: { 
-                    'Authorization': token,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            });
-            if (meRes.ok) {
-                const meData = await meRes.json();
-                analyticsToken = meData.analytics_token;
-            }
-        } catch (e) {
-            logCallback("⚠️ Không lấy được Analytics Token.");
-        }
-
-        if (!analyticsToken) {
-             logCallback("❌ Thiếu Analytics Token, không thể gửi sự kiện.");
-             return;
-        }
-
-        const headers = {
-            'Authorization': token,
-            'Cookie': cookie || '', // Cookie cf_clearance rất quan trọng
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.900 Chrome/108.0.5359.124 Electron/22.0.3 Safari/537.36',
-            'X-Super-Properties': 'eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MDAiLCJvc192ZXJzaW9uIjoiMTAuMC4xOTA0MiIsIm9zX2FyY2giOiJ4NjQiLCJzeXN0ZW1fbG9jYWxlIjoiZW4tVVMiLCJicm93c2VyX3VzZXJfYWdlbnQiOiIiLCJicm93c2VyX3ZlcnNpb24iOiIiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo5MDAsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9',
-            'Origin': 'https://discord.com',
-            'Referer': 'https://discord.com/channels/@me'
-        };
-
-        const res = await fetchWithTimeout('https://discord.com/api/v9/science', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ 
-                token: analyticsToken, 
-                events: events 
-            })
-        });
-
-        if (res.status === 204 || res.status === 200) {
-            logCallback(`✅ Đã gửi tín hiệu chơi game ${hours} giờ cho ID: ${gameId}`);
-            logCallback("⚠️ Lưu ý: Vì chạy trên Cloud Linux, badge có thể không hiện ngay hoặc bị Discord bỏ qua nếu thiếu Fingerprint thật.");
-        } else {
-            const errText = await res.text();
-            logCallback(`⚠️ Discord phản hồi: ${res.status} - ${errText}`);
-        }
-    } catch (err) {
-        logCallback(`❌ Lỗi AutoBadge: ${err.message}`);
-    } finally {
-        activeTasks.delete(taskId);
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discord Ultimate Tool</title>
+  <style>
+    :root {
+      --bg: #1e1f22; --card: #2b2d31; --input: #111214; --text: #dbdee1;
+      --primary: #5865f2; --success: #23a55a; --danger: #da373c; --warn: #f0b232;
     }
-}
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
+    .container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 15px; }
+    
+    .card { background: var(--card); border-radius: 8px; padding: 20px; border: 1px solid #1e1f22; }
+    h2 { font-size: 18px; color: #fff; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
+    
+    label { display: block; font-size: 12px; color: #949ba4; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; }
+    input, select, textarea { 
+      width: 100%; background: var(--input); border: 1px solid #1e1f22; border-radius: 4px; 
+      padding: 10px; color: #fff; font-size: 14px; outline: none; transition: 0.2s;
+    }
+    input:focus, select:focus { border-color: var(--primary); }
+    
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+    
+    .btn-group { display: flex; gap: 10px; margin-top: 15px; }
+    button { 
+      flex: 1; padding: 12px; border: none; border-radius: 4px; color: #fff; font-weight: 600; cursor: pointer; transition: 0.2s; 
+    }
+    .btn-start { background: var(--success); }
+    .btn-start:hover { background: #1a8f4b; }
+    .btn-stop { background: var(--danger); }
+    .btn-stop:hover { background: #b52b30; }
+    .btn-secondary { background: var(--primary); }
+    .btn-secondary:hover { background: #4752c4; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .tabs { display: flex; gap: 5px; margin-bottom: 15px; }
+    .tab { 
+      flex: 1; padding: 10px; background: var(--input); border: none; color: #949ba4; 
+      cursor: pointer; border-radius: 4px 4px 0 0; font-weight: 600;
+    }
+    .tab.active { background: var(--card); color: #fff; border-bottom: 2px solid var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .console { 
+      background: #000; color: #0f0; font-family: 'Consolas', monospace; font-size: 12px; 
+      padding: 15px; border-radius: 6px; height: 200px; overflow-y: auto; border: 1px solid #333;
+    }
+    .console p { margin: 2px 0; }
+    .log-info { color: #5865f2; }
+    .log-success { color: #23a55a; }
+    .log-error { color: #da373c; }
+    .log-warn { color: #f0b232; }
+    
+    .warning-box {
+      background: rgba(240, 178, 50, 0.1);
+      border-left: 3px solid var(--warn);
+      padding: 10px;
+      font-size: 12px;
+      color: var(--warn);
+      margin-bottom: 15px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+    <h2>⚡ Discord Ultimate Tool</h2>
+    
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('quest')">🎯 Auto Quest</button>
+      <button class="tab" onclick="switchTab('badge')">🎮 Auto Badge</button>
+    </div>
+
+    <!-- AUTO QUEST TAB -->
+    <div id="tab-quest" class="tab-content active">
+      <label>Discord Token</label>
+      <input id="q_token" type="password" placeholder="Dán token của bạn vào đây...">
+      
+      <label>Webhook URL (Tùy chọn)</label>
+      <input id="q_webhook" type="text" value="https://discord.com/api/webhooks/1563219916503392328/zoeP56iy_2kXQPOTFpfNbxvmr-NmjsFw8pKQh5D7ZRbkemRZOt3OOwMqGLyiRA8F4LKU">
+      
+      <div class="btn-group">
+        <button class="btn-start" onclick="startQuest()">▶️ Bắt đầu Quest</button>
+        <button class="btn-stop" onclick="stopAll()">⏹️ Dừng tất cả</button>
+      </div>
+    </div>
+
+    <!-- AUTO BADGE TAB -->
+    <div id="tab-badge" class="tab-content">
+      <div class="warning-box">
+        ⚠️ <strong>Lưu ý:</strong> Tool chạy trên Cloud Linux nên dùng Fingerprint giả lập. Tỷ lệ thành công thấp hơn so với chạy script Python trên máy Windows thật.
+      </div>
+
+      <label>Discord Token</label>
+      <input id="b_token" type="password" placeholder="Token...">
+      
+      <label>Cookie (cf_clearance) - <span style="color:var(--warn)">Rất quan trọng</span></label>
+      <input id="b_cookie" type="text" placeholder="__cf_clearance=...">
+
+      <div class="row" style="margin-top: 10px;">
+        <div style="flex: 3;">
+          <label>Chọn Game</label>
+          <select id="b_gameSelect" onchange="document.getElementById('b_gameId').value = this.value">
+            <option value="">-- Đang tải danh sách... --</option>
+          </select>
+        </div>
+        <div style="flex: 1; display: flex; align-items: flex-end;">
+          <button class="btn-secondary" onclick="loadGames()" style="margin-bottom: 0; height: 40px;">🔄 Tải Game</button>
+        </div>
+      </div>
+
+      <label>Hoặc nhập Game ID thủ công</label>
+      <input id="b_gameId" type="text" placeholder="Ví dụ: 356875221078245376">
+
+      <label>Số giờ giả lập (Ví dụ: 1700)</label>
+      <input id="b_hours" type="number" value="1700">
+
+      <div class="btn-group">
+        <button class="btn-start" onclick="startBadge()">▶️ Bắt đầu Badge</button>
+        <button class="btn-stop" onclick="stopAll()">⏹️ Dừng tất cả</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOG CONSOLE -->
+  <div class="card">
+    <h2>📟 System Logs</h2>
+    <div class="console" id="console"></div>
+  </div>
+</div>
+
+<script>
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById(`tab-${tab}`).classList.add('active');
+  }
+
+  function log(msg, type = 'info') {
+    const consoleDiv = document.getElementById('console');
+    const time = new Date().toLocaleTimeString();
+    const p = document.createElement('p');
+    p.className = `log-${type}`;
+    p.innerHTML = `<span style="color:#666">[${time}]</span> ${msg}`;
+    consoleDiv.appendChild(p);
+    consoleDiv.scrollTop = consoleDiv.scrollHeight;
+  }
+
+  async function loadGames() {
+    log('🔄 Đang tải danh sách game từ Discord...', 'info');
+    try {
+      const res = await fetch('/api/games');
+      const games = await res.json();
+      const select = document.getElementById('b_gameSelect');
+      select.innerHTML = '<option value="">-- Chọn Game --</option>';
+      
+      games.slice(0, 100).forEach(game => { // Giới hạn 100 game đầu để dropdown không bị lag
+        const option = document.createElement('option');
+        option.value = game.id;
+        option.textContent = `${game.name} (ID: ${game.id})`;
+        select.appendChild(option);
+      });
+      
+      log(`✅ Đã tải thành công ${games.length} game!`, 'success');
+    } catch (e) {
+      log('❌ Không thể tải danh sách game!', 'error');
+    }
+  }
+
+  async function startQuest() {
+    const token = document.getElementById('q_token').value;
+    const webhook = document.getElementById('q_webhook').value;
+    if (!token) return log('❌ Vui lòng nhập Token!', 'error');
+
+    log('🚀 Đang gửi yêu cầu bắt đầu AutoQuest...', 'info');
+    try {
+      const res = await fetch('/api/start-quest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, webhook })
+      });
+      const data = await res.json();
+      if (data.ok) log('✅ AutoQuest đã chạy nền. Theo dõi log bên dưới.', 'success');
+      else log(`❌ Lỗi: ${data.error}`, 'error');
+    } catch (e) {
+      log('❌ Không thể kết nối đến server!', 'error');
+    }
+  }
+
+  async function startBadge() {
+    const token = document.getElementById('b_token').value;
+    const cookie = document.getElementById('b_cookie').value;
+    const gameId = document.getElementById('b_gameId').value;
+    const hours = document.getElementById('b_hours').value;
+
+    if (!token || !gameId) return log('❌ Vui lòng nhập đầy đủ Token và Game ID!', 'error');
+
+    log(`🚀 Đang gửi yêu cầu AutoBadge cho Game ID: ${gameId}...`, 'info');
+    try {
+      const res = await fetch('/api/start-badge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, cookie, gameId, hours })
+      });
+      const data = await res.json();
+      if (data.ok) log('✅ AutoBadge đã chạy. Kiểm tra Discord sau vài phút.', 'success');
+      else log(`❌ Lỗi: ${data.error}`, 'error');
+    } catch (e) {
+      log('❌ Không thể kết nối đến server!', 'error');
+    }
+  }
+
+  async function stopAll() {
+    log('⏹️ Đang gửi lệnh dừng tất cả tác vụ...', 'warn');
+    await fetch('/api/stop', { method: 'POST' });
+    log('✅ Đã dừng mọi tác vụ đang chạy.', 'success');
+  }
+
+  // Tự động tải game khi mở tab Badge
+  document.querySelector('.tab:nth-child(2)').addEventListener('click', () => {
+    if (document.getElementById('b_gameSelect').options.length <= 1) {
+      loadGames();
+    }
+  });
+</script>
+
+</body>
+</html>
