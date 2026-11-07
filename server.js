@@ -1,248 +1,246 @@
 const express = require('express');
-const path = require('path');
 const WebSocket = require('ws');
+const path = require('path');
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── CẤU HÌNH ────────────────────────────────────────────────
-const DEFAULT_WEBHOOK = "https://discord.com/api/webhooks/1563219916503392328/zoeP56iy_2kXQPOTFpfNbxvmr-NmjsFw8pKQh5D7ZRbkemRZOt3OOwMqGLyiRA8F4LKU";
-const REQUEST_TIMEOUT = 15000;
+let activeSocket = null;
+let heartbeatTimer = null;
+let rotateTimer = null;
+let isQuestRunning = false;
 
-// ─── STATE MANAGEMENT ────────────────────────────────────────
-const activeTasks = new Map();
-const activeRPCs = new Map(); // Lưu trữ các kết nối WebSocket Gateway
-
-// ─── HELPER: FETCH VỚI TIMEOUT (Native Node 18+) ─────────────
-async function fetchWithTimeout(url, options = {}, timeout = REQUEST_TIMEOUT) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-        return await globalThis.fetch(url, { ...options, signal: controller.signal });
-    } finally {
-        clearTimeout(id);
-    }
+function stopCurrentSocket() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  if (rotateTimer) clearInterval(rotateTimer);
+  if (activeSocket) {
+    try { activeSocket.terminate(); } catch(e){}
+    activeSocket = null;
+  }
 }
 
-// =================================================================
-// ─── 1. DISCORD GATEWAY CLIENT (Dùng cho Fake RPC) ─────────────
-// =================================================================
-class DiscordGateway {
-    constructor(token, logCallback) {
-        this.token = token;
-        this.log = logCallback;
-        this.ws = null;
-        this.heartbeatInterval = null;
-        this.seq = 0;
+// ==========================================
+// PHẦN 1: FAKE RPC (WebSocket)
+// ==========================================
+app.post('/api/start', (req, res) => {
+  stopCurrentSocket(); 
+  
+  const data = req.body;
+  if (!data.token) return res.status(400).json({ error: 'Thiếu token' });
+
+  const ws = new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json');
+  activeSocket = ws;
+  let seq = null;
+  let idx = 0;
+
+  let fakeStartTime = Date.now();
+  if (data.hours && parseInt(data.hours) > 0) {
+      const offset = parseInt(data.hours) * 3600 * 1000;
+      const calcTime = Date.now() - offset;
+      if (calcTime > 0) fakeStartTime = calcTime;
+  }
+
+  const states = data.states && data.states.length > 0 ? data.states : [''];
+  
+  const buildActivity = () => {
+    let actName = (data.name || '').trim() || 'Visual Studio Code';
+    let act = {
+      name: actName,
+      type: parseInt(data.type) || 0,
+      timestamps: { start: fakeStartTime },
+      instance: false
+    };
+
+    if (data.details && data.details.trim()) act.details = data.details.trim();
+    const currentState = states[idx % states.length];
+    if (currentState && currentState.trim()) act.state = currentState.trim();
+    
+    act.assets = {};
+    const isDirectImage = (url) => url && /^https?:\/\//i.test(url) && /\.(jpeg|jpg|gif|png|webp)/i.test(url);
+    if (isDirectImage(data.largeImage)) {
+      act.assets.large_image = data.largeImage;
+      act.assets.large_text = actName;
     }
-
-    connect(initialActivity) {
-        this.ws = new WebSocket('wss://gateway.discord.gg/?v=9&encoding=json');
-        
-        this.ws.on('open', () => {
-            this.log("🔌 Đã kết nối đến Discord Gateway...");
-            this.identify(initialActivity); // Gửi Token + RPC ngay lúc kết nối
-        });
-
-        this.ws.on('message', (data) => {
-            try {
-                const payload = JSON.parse(data);
-                this.handleMessage(payload);
-            } catch (e) {}
-        });
-
-        this.ws.on('close', () => {
-            this.log("⚠️ Mất kết nối Gateway.");
-            this.cleanup();
-        });
-
-        this.ws.on('error', (err) => {
-            this.log(`❌ Lỗi Gateway: ${err.message}`);
-        });
+    if (isDirectImage(data.smallImage)) {
+      act.assets.small_image = data.smallImage;
     }
+    if (Object.keys(act.assets).length === 0) delete act.assets;
 
-    handleMessage(payload) {
-        const { op, d, s } = payload;
-        if (s) this.seq = s;
+    let btns = [];
+    const isValidUrl = (url) => url && (url.startsWith('https://') || url.startsWith('http://'));
+    if (data.btn1 && data.btn1.label && data.btn1.label.trim() && isValidUrl(data.btn1.url)) {
+        btns.push({ label: data.btn1.label.trim(), url: data.btn1.url.trim() });
+    }
+    if (data.btn2 && data.btn2.label && data.btn2.label.trim() && isValidUrl(data.btn2.url)) {
+        btns.push({ label: data.btn2.label.trim(), url: data.btn2.url.trim() });
+    }
+    if (btns.length > 0) act.buttons = btns;
 
-        if (op === 10) { // Hello
-            this.log("🤖 Nhận Hello, bắt đầu giữ kết nối (Heartbeat)...");
-            this.startHeartbeat(d.heartbeat_interval);
-        } else if (op === 11) { // Heartbeat ACK
-            // OK
-        } else if (op === 9) { // Invalid Session
-            this.log("❌ Token sai hoặc phiên không hợp lệ!");
-            this.cleanup();
-        } else if (op === 7) { // Reconnect
-            this.ws.close();
+    return act;
+  };
+
+  ws.on('open', () => {
+    if (states.length > 1) {
+      rotateTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          idx++;
+          ws.send(JSON.stringify({
+            op: 3,
+            d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false }
+          }));
         }
+      }, (parseInt(data.delay) || 4) * 1000);
     }
+  });
 
-    startHeartbeat(interval) {
-        this.heartbeatInterval = setInterval(() => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({ op: 1, d: this.seq }));
-            }
-        }, interval);
-    }
+  ws.on('message', (raw) => {
+    const pkt = JSON.parse(raw);
+    if (pkt.s) seq = pkt.s;
 
-    identify(activity) {
-        const payload = {
-            op: 2,
-            d: {
-                token: this.token,
-                intents: 0, // Không cần nhận event, chỉ gửi status
-                properties: {
-                    os: "Windows",
-                    browser: "Discord Client",
-                    device: ""
-                },
-                presence: {
-                    status: "online",
-                    since: 0,
-                    activities: [activity], // Gắn RPC vào ngay lúc Identify
-                    afk: false
-                }
-            }
-        };
-        this.ws.send(JSON.stringify(payload));
-        this.log(`🎭 Đã gửi lệnh Fake RPC: ${activity.name || activity.state}`);
-    }
+    if (pkt.op === 10) {
+      heartbeatTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 1, d: seq }));
+      }, pkt.d.heartbeat_interval);
 
-    cleanup() {
-        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
-        if (this.ws) this.ws.terminate();
-    }
-}
-
-// =================================================================
-// ─── 2. AUTOQUEST WORKER ─────────────────────────────────────
-// =================================================================
-async function runAutoQuest(taskId, token, webhookUrl, logCallback) {
-    const headers = { 'Authorization': token, 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' };
-    try {
-        logCallback("🔍 Đang lấy danh sách Quest...");
-        const questRes = await fetchWithTimeout('https://discord.com/api/v9/quests/@me', { headers });
-        if (!questRes.ok) throw new Error(`Lấy quest thất bại: ${questRes.status}`);
-        
-        const data = await questRes.json();
-        const quests = data.quests || (Array.isArray(data) ? data : []);
-        const targetQuest = quests.find(q => !q.userStatus?.completedAt && !q.userStatus?.enrolledAt);
-
-        if (!targetQuest) return logCallback("✅ Không có quest mới nào!");
-
-        const qid = targetQuest.id;
-        const qName = targetQuest.config?.messages?.questName || `Quest #${qid}`;
-        logCallback(`📌 Phát hiện quest: ${qName}`);
-
-        await fetchWithTimeout(`https://discord.com/api/v9/quests/${qid}/enroll`, { method: 'POST', headers, body: JSON.stringify({ location: 11 }) });
-        
-        for (let i = 1; i <= 5; i++) {
-            if (!activeTasks.has(taskId)) return logCallback("⏹️ Đã dừng bởi người dùng.");
-            await fetchWithTimeout(`https://discord.com/api/v9/quests/${qid}/video-progress`, {
-                method: 'POST', headers, body: JSON.stringify({ timestamp: Math.floor(Date.now() / 1000) - (i * 600) })
-            });
-            logCallback(`🔄 Tiến độ: ${(i / 5 * 100).toFixed(0)}%`);
-            await new Promise(r => setTimeout(r, 3000));
+      const identifyProps = { os: data.platform || 'desktop', browser: 'Chrome', device: '' };
+      ws.send(JSON.stringify({
+        op: 2,
+        d: {
+          token: data.token,
+          capabilities: 16381,
+          properties: identifyProps,
+          presence: { status: data.status || 'online', since: 0, activities: [buildActivity()], afk: false }
         }
-        logCallback("🎉 Hoàn thành Quest!");
-    } catch (err) { logCallback(`❌ Lỗi: ${err.message}`); } 
-    finally { activeTasks.delete(taskId); }
-}
-
-// =================================================================
-// ─── 3. AUTOBADGE WORKER (Cloud Fallback) ────────────────────
-// =================================================================
-async function runAutoBadge(taskId, token, cookie, gameId, hours, logCallback) {
-    try {
-        logCallback("🎮 Bắt đầu AutoBadge...");
-        const durationMs = Math.floor(hours * 3600 * 1000);
-        const now = Date.now();
-        const sessionId = require('crypto').randomUUID();
-        
-        const meRes = await fetchWithTimeout('https://discord.com/api/v9/users/@me?with_analytics_token=true', {
-            headers: { 'Authorization': token, 'User-Agent': 'Mozilla/5.0' }
-        });
-        if (!meRes.ok) throw new Error("Token sai");
-        const analyticsToken = (await meRes.json()).analytics_token;
-
-        const events = [
-            { type: "running_game_heartbeat", properties: { client_track_timestamp: now - durationMs, client_heartbeat_session_id: sessionId, event_sequence_number: 1, game_id: gameId, initial_heartbeat: true, final_heartbeat: false, duration_tracked_ms: 0 } },
-            { type: "launch_game", properties: { client_track_timestamp: now - durationMs + 1000, client_heartbeat_session_id: sessionId, event_sequence_number: 2, game_id: gameId, verified: true } },
-            { type: "running_game_heartbeat", properties: { client_track_timestamp: now, client_heartbeat_session_id: sessionId, event_sequence_number: 3, game_id: gameId, initial_heartbeat: false, final_heartbeat: true, duration_tracked_ms: durationMs } }
-        ];
-
-        const res = await fetchWithTimeout('https://discord.com/api/v9/science', {
-            method: 'POST',
-            headers: { 'Authorization': token, 'Cookie': cookie || '', 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-            body: JSON.stringify({ token: analyticsToken, events })
-        });
-
-        if (res.status === 204) logCallback("✅ Gửi tín hiệu AutoBadge thành công!");
-        else logCallback(`⚠️ Discord phản hồi: ${res.status}`);
-    } catch (err) { logCallback(`❌ Lỗi AutoBadge: ${err.message}`); } 
-    finally { activeTasks.delete(taskId); }
-}
-
-// =================================================================
-// ─── API ROUTES ──────────────────────────────────────────────
-// =================================================================
-app.post('/api/start-quest', async (req, res) => {
-    const { token, webhook } = req.body;
-    if (!token) return res.status(400).json({ error: 'Thiếu token' });
-    const taskId = Date.now().toString();
-    activeTasks.set(taskId, true);
-    runAutoQuest(taskId, token, webhook, (msg) => console.log(`[Quest] ${msg}`));
-    res.json({ ok: true });
-});
-
-app.post('/api/start-badge', async (req, res) => {
-    const { token, cookie, gameId, hours } = req.body;
-    if (!token || !gameId) return res.status(400).json({ error: 'Thiếu thông tin' });
-    const taskId = Date.now().toString();
-    activeTasks.set(taskId, true);
-    runAutoBadge(taskId, token, cookie, gameId, hours, (msg) => console.log(`[Badge] ${msg}`));
-    res.json({ ok: true });
-});
-
-app.post('/api/start-rpc', (req, res) => {
-    const { token, rpcData } = req.body;
-    if (!token) return res.status(400).json({ error: 'Thiếu token' });
-    
-    const taskId = `rpc_${Date.now()}`;
-    const logCallback = (msg) => console.log(`[RPC] ${msg}`);
-    
-    // Build Activity Payload
-    let activity;
-    if (rpcData.type === 'status') {
-        activity = { name: "Custom Status", type: 4, state: rpcData.state || "Đang rảnh" };
-    } else {
-        activity = {
-            name: rpcData.name || "Fake Game", type: 0,
-            details: rpcData.details, state: rpcData.state,
-            timestamps: { start: Date.now() },
-            assets: { large_image: rpcData.large_image, large_text: rpcData.large_text, small_image: rpcData.small_image, small_text: rpcData.small_text },
-            buttons: []
-        };
-        if (rpcData.btn1_label && rpcData.btn1_url) activity.buttons.push({ label: rpcData.btn1_label, url: rpcData.btn1_url });
-        if (rpcData.btn2_label && rpcData.btn2_url) activity.buttons.push({ label: rpcData.btn2_label, url: rpcData.btn2_url });
+      }));
+      if (!res.headersSent) res.json({ ok: true, msg: 'Đã kết nối RPC' });
     }
-
-    const gateway = new DiscordGateway(token, logCallback);
-    activeRPCs.set(taskId, gateway);
-    gateway.connect(activity);
     
-    res.json({ ok: true, taskId });
+    if (pkt.t === 'READY') {
+      ws.send(JSON.stringify({ op: 3, d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false } }));
+    }
+    if (pkt.op === 9) stopCurrentSocket();
+  });
+
+  ws.on('close', () => { clearInterval(heartbeatTimer); clearInterval(rotateTimer); });
+  ws.on('error', (err) => { stopCurrentSocket(); if (!res.headersSent) res.status(500).json({ error: err.message }); });
 });
 
 app.post('/api/stop', (req, res) => {
-    let count = 0;
-    activeTasks.clear();
-    activeRPCs.forEach((gw) => { gw.cleanup(); count++; });
-    activeRPCs.clear();
-    res.json({ ok: true, message: `Đã dừng ${count} tác vụ.` });
+  stopCurrentSocket();
+  res.json({ ok: true });
+});
+
+app.get('/api/status', (req, res) => {
+  res.json({ online: activeSocket && activeSocket.readyState === WebSocket.OPEN });
+});
+
+// ==========================================
+// PHẦN 2: AUTOQUEST (Dùng Fetch của Node)
+// ==========================================
+const getQuestHeaders = (token) => {
+  const sp = Buffer.from(JSON.stringify({
+    os: "Windows", browser: "Discord Client", release_channel: "stable", client_version: "1.0.9175",
+    os_version: "10.0.26100", os_arch: "x64", app_arch: "x64", system_locale: "en-US",
+    browser_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9175 Chrome/128.0.6613.186 Electron/32.2.7 Safari/537.36",
+    browser_version: "32.2.7", client_build_number: 504649, native_build_number: 59498, client_event_source: null
+  })).toString('base64');
+  
+  return {
+    "Authorization": token,
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9175 Chrome/128.0.6613.186 Electron/32.2.7 Safari/537.36",
+    "X-Super-Properties": sp,
+    "Origin": "https://discord.com",
+    "Referer": "https://discord.com/channels/@me"
+  };
+};
+
+async function runAutoQuest(token) {
+  if (isQuestRunning) {
+    console.log("[Quest] Đang chạy tiến trình khác, bỏ qua...");
+    return;
+  }
+  isQuestRunning = true;
+  console.log("[Quest] Bắt đầu AutoQuest cho token:", token.substring(0, 15) + "...");
+  
+  const headers = getQuestHeaders(token);
+  
+  try {
+    // 1. Lấy danh sách quest
+    const res = await fetch("https://discord.com/api/v9/quests/@me", { headers });
+    if (res.status !== 200) {
+      console.log("[Quest] Lỗi lấy quest, có thể token die.");
+      isQuestRunning = false;
+      return;
+    }
+    const data = await res.json();
+    const quests = Array.isArray(data) ? data : data.quests || [];
+    
+    for (const q of quests) {
+      if (q.userStatus?.completedAt) continue; // Đã xong
+      
+      const qid = q.id;
+      const name = q.config?.messages?.questName || q.config?.messages?.gameTitle || "Quest ẩn danh";
+      const taskConfig = q.config?.taskConfig || q.config?.taskConfigV2 || {};
+      const tasks = taskConfig.tasks || {};
+      const taskType = Object.keys(tasks).find(t => ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY"].includes(t));
+      
+      if (!taskType) continue;
+      
+      // 2. Enroll nếu chưa nhận
+      if (!q.userStatus?.enrolledAt) {
+        console.log(`[Quest] Đang nhận quest: ${name}`);
+        await fetch(`https://discord.com/api/v9/quests/${qid}/enroll`, {
+          method: 'POST', headers, body: JSON.stringify({ location: 11, is_targeted: false })
+        });
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      // 3. Làm quest (Chỉ fake được WATCH_VIDEO)
+      if (taskType === "WATCH_VIDEO") {
+        let needed = tasks[taskType]?.target || 0;
+        let done = q.userStatus?.progress?.[taskType]?.value || 0;
+        
+        console.log(`[Quest] Bắt đầu cày video: ${name} (${done}/${needed}s)`);
+        let timeout = 0;
+        
+        while (done < needed && timeout < 100) {
+          const timestamp = Math.min(needed, done + 7 + Math.random());
+          const vRes = await fetch(`https://discord.com/api/v9/quests/${qid}/video-progress`, {
+            method: 'POST', headers, body: JSON.stringify({ timestamp })
+          });
+          
+          if (vRes.status === 200) {
+            const vData = await vRes.json();
+            if (vData.completed_at) break;
+            done = timestamp;
+          }
+          await new Promise(r => setTimeout(r, 1000));
+          timeout++;
+        }
+        console.log(`[Quest] Xong quest video: ${name}`);
+      } else {
+        console.log(`[Quest] Bỏ qua ${name} vì yêu cầu bật app (không fake được).`);
+      }
+    }
+  } catch (err) {
+    console.log("[Quest] Lỗi:", err.message);
+  } finally {
+    isQuestRunning = false;
+    console.log("[Quest] Đã chạy xong chu trình AutoQuest.");
+  }
+}
+
+app.post('/api/autoquest', (req, res) => {
+  const token = req.body.token;
+  if (!token) return res.status(400).json({ ok: false, msg: 'Thiếu token' });
+  
+  // Chạy ngầm, không bắt web phải chờ (tránh bị timeout 10s của Render)
+  runAutoQuest(token); 
+  
+  res.json({ ok: true, msg: 'Đã bắt đầu AutoQuest, xem log Render để biết kết quả.' });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
