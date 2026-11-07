@@ -10,7 +10,6 @@ let activeSocket = null;
 let heartbeatTimer = null;
 let rotateTimer = null;
 
-// Hàm dọn dẹp sạch sẽ mọi kết nối cũ và timer
 function stopCurrentSocket() {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   if (rotateTimer) clearInterval(rotateTimer);
@@ -21,7 +20,7 @@ function stopCurrentSocket() {
 }
 
 app.post('/api/start', (req, res) => {
-  stopCurrentSocket(); // Dọn dẹp trước khi chạy cái mới
+  stopCurrentSocket(); 
   
   const data = req.body;
   if (!data.token) return res.status(400).json({ error: 'Thiếu token' });
@@ -31,38 +30,44 @@ app.post('/api/start', (req, res) => {
   let seq = null;
   let idx = 0;
 
-  // TÍNH MỐC THỜI GIAN 1 LẦN DUY NHẤT (Fix lỗi reset giờ)
   const fakeStartTime = data.hours > 0 ? Date.now() - (data.hours * 3600 * 1000) : Date.now();
-
   const states = data.states && data.states.length > 0 ? data.states : [''];
   
   const buildActivity = () => {
+    let actName = (data.name || '').trim();
+    if (!actName) actName = 'Visual Studio Code';
+
     let act = {
-      name: data.name || 'Visual Studio Code',
+      name: actName,
       type: parseInt(data.type) || 0,
-      timestamps: { start: fakeStartTime }, // Dùng hằng số cố định
+      timestamps: { start: fakeStartTime },
       instance: false
     };
 
-    // Lọc dữ liệu rỗng để tránh lỗi Discord API
-    if (data.details) act.details = data.details;
-    if (states[idx % states.length]) act.state = states[idx % states.length];
+    if (data.details && data.details.trim()) act.details = data.details.trim();
+    const currentState = states[idx % states.length];
+    if (currentState && currentState.trim()) act.state = currentState.trim();
     
     act.assets = {};
-    if (data.largeImage) {
+    const isDirectImage = (url) => url && /^https?:\/\//i.test(url) && /\.(jpeg|jpg|gif|png|webp)/i.test(url);
+    
+    if (isDirectImage(data.largeImage)) {
       act.assets.large_image = data.largeImage;
-      act.assets.large_text = data.name || 'Image';
+      act.assets.large_text = actName;
     }
-    if (data.smallImage) {
+    if (isDirectImage(data.smallImage)) {
       act.assets.small_image = data.smallImage;
-      act.assets.small_text = 'Small';
     }
     if (Object.keys(act.assets).length === 0) delete act.assets;
 
-    // Nút bấm
     let btns = [];
-    if (data.btn1 && data.btn1.label && data.btn1.url) btns.push({ label: data.btn1.label, url: data.btn1.url });
-    if (data.btn2 && data.btn2.label && data.btn2.url) btns.push({ label: data.btn2.label, url: data.btn2.url });
+    const isValidUrl = (url) => url && url.startsWith('https://');
+    if (data.btn1 && data.btn1.label && data.btn1.label.trim() && isValidUrl(data.btn1.url)) {
+        btns.push({ label: data.btn1.label.trim(), url: data.btn1.url.trim() });
+    }
+    if (data.btn2 && data.btn2.label && data.btn2.label.trim() && isValidUrl(data.btn2.url)) {
+        btns.push({ label: data.btn2.label.trim(), url: data.btn2.url.trim() });
+    }
     if (btns.length > 0) act.buttons = btns;
 
     return act;
@@ -93,6 +98,9 @@ app.post('/api/start', (req, res) => {
 
       const identifyProps = { os: data.platform || 'desktop', browser: 'Chrome', device: '' };
       
+      const currentAct = buildActivity();
+      console.log("=> ĐANG GỬI PAYLOAD LÊN DISCORD:", JSON.stringify(currentAct, null, 2));
+
       ws.send(JSON.stringify({
         op: 2,
         d: {
@@ -102,7 +110,7 @@ app.post('/api/start', (req, res) => {
           presence: {
             status: data.status || 'online',
             since: 0,
-            activities: [buildActivity()],
+            activities: [currentAct],
             afk: false
           }
         }
@@ -111,18 +119,19 @@ app.post('/api/start', (req, res) => {
     }
     
     if (pkt.op === 9) {
-      console.log("Lỗi: Invalid Session (Token sai hoặc bị block).");
+      console.log("=> LỖI TỪ DISCORD (Op 9 - Invalid Session):", pkt.d);
       stopCurrentSocket();
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
+    console.log(`=> ĐÓNG KẾT NỐI: Code ${code} - Lý do: ${reason.toString() || 'Không có lý do'}`);
     clearInterval(heartbeatTimer);
     clearInterval(rotateTimer);
   });
   
   ws.on('error', (err) => {
-    console.error("WS Error:", err.message);
+    console.error("=> LỖI WEBSOCKET:", err.message);
     stopCurrentSocket();
     if (!res.headersSent) res.status(500).json({ error: err.message });
   });
