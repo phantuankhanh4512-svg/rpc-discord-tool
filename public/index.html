@@ -12,8 +12,8 @@
     h2 { font-size: 18px; color: #fff; margin-bottom: 15px; text-align: center; }
     label { display: block; font-size: 11px; color: #9ca3af; margin-bottom: 6px; text-transform: uppercase; font-weight: bold; margin-top: 15px; }
     label:first-of-type { margin-top: 0; }
-    input, select { width: 100%; background: #0b0e13; border: 1px solid #2b3240; border-radius: 6px; padding: 10px 12px; color: #fff; font-family: monospace; font-size: 13px; outline: none; }
-    input:focus, select:focus { border-color: #5865f2; }
+    input, select, textarea { width: 100%; background: #0b0e13; border: 1px solid #2b3240; border-radius: 6px; padding: 10px 12px; color: #fff; font-family: monospace; font-size: 13px; outline: none; }
+    input:focus, select:focus, textarea:focus { border-color: #5865f2; }
     .row { display: flex; gap: 10px; }
     .row > div { flex: 1; }
     button { width: 100%; padding: 14px; border: none; border-radius: 6px; color: #fff; font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-top: 20px; }
@@ -21,7 +21,6 @@
     .btn-stop { background: #ef4444; }
     #status { margin-top: 15px; text-align: center; font-size: 13px; font-weight: 600; color: #9ca3af; }
     
-    /* Preview Card */
     .preview { background: #2b2d31; border-radius: 8px; padding: 15px; display: flex; gap: 15px; margin-top: 20px; position: relative; }
     .preview img { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; background: #1e1f22; }
     .preview-info { display: flex; flex-direction: column; justify-content: center; gap: 4px; flex: 1; }
@@ -35,12 +34,11 @@
 <body>
 <div class="container">
   
-  <!-- KHUNG CẤU HÌNH -->
   <div class="card">
     <h2>⚡ RPC Configurator</h2>
     
     <label>Token Discord</label>
-    <input id="token" type="password" placeholder="Dán token...">
+    <input id="token" type="password" value="OTExODc0MjIyMzM3NDUwMDI1.GAVLc4.14ptyF_MC1JptSSiW0pLiwQDevY0Q7SH-BxMVI">
 
     <label>Chọn mẫu nhanh (Templates)</label>
     <select id="template" onchange="applyTemplate()">
@@ -61,21 +59,19 @@
     </select>
 
     <label>Tên Game / Tiêu đề (Name)</label>
-    <input id="name" type="text" value="Visual Studio Code">
+    <input id="name" type="text" value="">
 
     <label>Dòng chữ chi tiết 1 (Details)</label>
-    <input id="details" type="text" value="Workspace: tinhdiem-bot">
+    <input id="details" type="text" value="">
 
     <label>Dòng chữ 2 (State - xoay vòng mỗi dòng 1 hàng)</label>
-    <textarea id="state" rows="3" style="width:100%; background:#0b0e13; border:1px solid #2b3240; border-radius:6px; padding:10px; color:#fff; font-family:monospace; outline:none;">Editing server.js
-Editing td.js
-Editing main.js</textarea>
+    <textarea id="state" rows="3"></textarea>
 
     <label>Link ảnh lớn (Large Image URL)</label>
-    <input id="largeImage" type="text" value="https://upload.wikimedia.org/wikipedia/commons/9/9a/Visual_Studio_Code_1.35_icon.svg">
+    <input id="largeImage" type="text" value="">
 
     <label>Link ảnh nhỏ (Small Image URL)</label>
-    <input id="smallImage" type="text" placeholder="Bỏ trống nếu không dùng...">
+    <input id="smallImage" type="text" value="" placeholder="Bỏ trống nếu không dùng...">
 
     <label>Số giờ Fake Time</label>
     <input id="hours" type="number" value="1700">
@@ -104,22 +100,22 @@ Editing main.js</textarea>
     <div class="row" style="margin-top: 15px;">
       <div>
         <label>Nút bấm 1 (Tên)</label>
-        <input id="btn1Label" type="text" placeholder="My Website">
+        <input id="btn1Label" type="text" value="">
       </div>
       <div>
         <label>Nút bấm 1 (Link)</label>
-        <input id="btn1Url" type="text" placeholder="https://...">
+        <input id="btn1Url" type="text" value="">
       </div>
     </div>
     
     <div class="row" style="margin-top: 10px;">
       <div>
         <label>Nút bấm 2 (Tên)</label>
-        <input id="btn2Label" type="text" placeholder="Discord Server">
+        <input id="btn2Label" type="text" value="">
       </div>
       <div>
         <label>Nút bấm 2 (Link)</label>
-        <input id="btn2Url" type="text" placeholder="https://...">
+        <input id="btn2Url" type="text" value="">
       </div>
     </div>
 
@@ -130,15 +126,14 @@ Editing main.js</textarea>
     <div id="status">Chờ lệnh...</div>
   </div>
 
-  <!-- KHUNG PREVIEW -->
   <div class="card">
     <h2>Xem trước (Live Preview)</h2>
     <div class="preview">
-      <img id="prevImg" src="https://upload.wikimedia.org/wikipedia/commons/9/9a/Visual_Studio_Code_1.35_icon.svg" alt="img">
+      <img id="prevImg" src="" alt="img" style="display:none;">
       <div class="preview-info">
-        <div class="preview-title" id="prevName">Visual Studio Code</div>
-        <div class="preview-desc" id="prevDetails">Workspace: tinhdiem-bot</div>
-        <div class="preview-desc" id="prevState">Editing server.js</div>
+        <div class="preview-title" id="prevName">Tên App</div>
+        <div class="preview-desc" id="prevDetails">Details</div>
+        <div class="preview-desc" id="prevState">State</div>
         <div class="preview-time">
           <span style="font-size:14px;">🎮</span> <span id="prevTime">1700:00:00</span>
         </div>
@@ -155,7 +150,6 @@ Editing main.js</textarea>
 <script>
 const $ = id => document.getElementById(id);
 
-// Hàm cập nhật Preview trực tiếp khi gõ
 function updatePreview() {
   $('prevName').innerText = $('name').value || 'Tên App';
   $('prevDetails').innerText = $('details').value || 'Details';
@@ -170,7 +164,6 @@ function updatePreview() {
     $('prevImg').style.display = 'none';
   }
 
-  // Nút bấm
   if ($('btn1Label').value) {
     $('prevBtn1').style.display = 'block';
     $('prevBtn1').innerText = $('btn1Label').value;
@@ -186,12 +179,10 @@ function updatePreview() {
   }
 }
 
-// Gắn sự kiện để preview thay đổi theo thời gian thực
 ['name', 'details', 'state', 'largeImage', 'btn1Label', 'btn2Label'].forEach(id => {
   $(id).addEventListener('input', updatePreview);
 });
 
-// Chạy đếm giờ ở preview
 setInterval(() => {
   const hours = parseFloat($('hours').value) || 0;
   const totalSecs = Math.floor(Date.now() / 1000) - (hours * 3600);
@@ -218,6 +209,16 @@ function applyTemplate() {
     $('details').value = 'Premier Mode';
     $('state').value = 'Competitive\nDeathmatch';
     $('largeImage').value = 'https://upload.wikimedia.org/wikipedia/en/f/f2/Counter-Strike_2_cover_art.jpg';
+  } else {
+    $('name').value = '';
+    $('details').value = '';
+    $('state').value = '';
+    $('largeImage').value = '';
+    $('smallImage').value = '';
+    $('btn1Label').value = '';
+    $('btn1Url').value = '';
+    $('btn2Label').value = '';
+    $('btn2Url').value = '';
   }
   updatePreview();
 }
