@@ -21,7 +21,13 @@
     .btn-quest { background: #5865f2; color: #fff; }
     .btn-stop { background: #ef4444; }
     #status { margin-top: 15px; text-align: center; font-size: 13px; font-weight: 600; color: #9ca3af; }
-    #quest-status { margin-top: 15px; text-align: center; font-size: 13px; color: #9ca3af; }
+    
+    /* CSS cho thanh tiến trình */
+    .progress-container { margin-top: 15px; background: #0b0e13; border-radius: 6px; border: 1px solid #2b3240; overflow: hidden; height: 20px; position: relative; display: none; }
+    .progress-bar { height: 100%; background: #5865f2; width: 0%; transition: width 0.3s ease; }
+    .progress-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; }
+    .log-box { margin-top: 15px; background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; color: #22c55e; display: none; }
+    .log-box p { margin-bottom: 4px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -71,9 +77,16 @@ Editing td.js</textarea>
 
   <div class="card">
     <h2>🎮 AutoQuest</h2>
-    <p style="font-size: 12px; color: #9ca3af; margin-bottom: 10px;">Tự động cày Quest xem video (chỉ dùng token ở trên). Đợi log Render báo xong.</p>
-    <button class="btn-quest" onclick="startQuest()">Chạy AutoQuest</button>
-    <div id="quest-status">Chưa chạy</div>
+    <p style="font-size: 12px; color: #9ca3af; margin-bottom: 10px;">Tự động cày Quest xem video. Hãy kiểm tra token trước khi chạy.</p>
+    <button class="btn-quest" id="btnQuest" onclick="startQuest()">Kiểm tra & Chạy AutoQuest</button>
+    
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+      <div class="progress-text" id="progressText">0%</div>
+    </div>
+    <div id="quest-status" style="margin-top: 10px; text-align: center; font-size: 13px; color: #9ca3af;"></div>
+    
+    <div class="log-box" id="logBox"></div>
   </div>
 </div>
 
@@ -129,28 +142,110 @@ async function stop() {
   checkStatus();
 }
 
+// ==============================
+// LOGIC AUTOQUEST MỚI
+// ==============================
+let questPoller = null;
+
 async function startQuest() {
   const token = $('token').value;
   if (!token) return alert('Nhập token ở trên trước!');
-  $('quest-status').innerText = 'Đang gửi lệnh AutoQuest lên server...';
-  $('quest-status').style.color = '#eab308';
   
+  const btn = $('btnQuest');
+  btn.disabled = true;
+  btn.innerText = "Đang kiểm tra token...";
+  
+  $('quest-status').innerText = "Đang xác thực...";
+  $('quest-status').style.color = "#eab308";
+  $('logBox').style.display = 'block';
+  $('logBox').innerHTML = '';
+  $('progressContainer').style.display = 'block';
+  $('progressBar').style.width = '0%';
+  $('progressText').innerText = '0%';
+
+  // 1. Kiểm tra token trước
+  try {
+    const vRes = await fetch('/api/validate-token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
+    });
+    const vData = await vRes.json();
+    
+    if (!vData.ok) {
+      $('quest-status').innerText = vData.msg;
+      $('quest-status').style.color = "#ef4444";
+      btn.disabled = false;
+      btn.innerText = "Kiểm tra & Chạy AutoQuest";
+      return;
+    }
+    
+    // Token hợp lệ
+    $('quest-status').innerText = "Token hợp lệ. Bắt đầu chạy...";
+    $('logBox').innerHTML += `<p>[System] Token hợp lệ (${vData.username})</p>`;
+    
+  } catch (e) {
+    $('quest-status').innerText = "Lỗi kiểm tra token";
+    $('quest-status').style.color = "#ef4444";
+    btn.disabled = false;
+    btn.innerText = "Kiểm tra & Chạy AutoQuest";
+    return;
+  }
+
+  // 2. Gọi API bắt đầu chạy
   try {
     const res = await fetch('/api/autoquest', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
     });
     const data = await res.json();
+    
     if (data.ok) {
-      $('quest-status').innerText = 'Đã chạy ngầm! Xem tab Logs trên Render.';
-      $('quest-status').style.color = '#22c55e';
+      btn.innerText = "Đang chạy AutoQuest...";
+      // Bắt đầu poll trạng thái
+      questPoller = setInterval(pollQuest, 1000);
     } else {
-      $('quest-status').innerText = 'Lỗi: ' + data.msg;
-      $('quest-status').style.color = '#ef4444';
+      $('quest-status').innerText = data.msg;
+      $('quest-status').style.color = "#ef4444";
+      btn.disabled = false;
+      btn.innerText = "Kiểm tra & Chạy AutoQuest";
     }
   } catch (e) {
-    $('quest-status').innerText = 'Lỗi server Render.';
-    $('quest-status').style.color = '#ef4444';
+    $('quest-status').innerText = "Lỗi gửi lệnh chạy";
+    $('quest-status').style.color = "#ef4444";
+    btn.disabled = false;
+    btn.innerText = "Kiểm tra & Chạy AutoQuest";
   }
+}
+
+async function pollQuest() {
+  try {
+    const res = await fetch('/api/quest-status');
+    const data = await res.json();
+    
+    // Cập nhật thanh tiến trình
+    if (data.total > 0) {
+      const pct = Math.floor((data.completed / data.total) * 100);
+      $('progressBar').style.width = pct + '%';
+      $('progressText').innerText = pct + '% (' + data.completed + '/' + data.total + ')';
+    }
+
+    // Cập nhật log
+    if (data.logs && data.logs.length > 0) {
+      $('logBox').innerHTML = data.logs.map(l => `<p>${l}</p>`).join('');
+      $('logBox').scrollTop = $('logBox').scrollHeight;
+    }
+    
+    // Cập nhật action hiện tại
+    $('quest-status').innerText = data.currentAction;
+    $('quest-status').style.color = data.running ? '#5865f2' : '#22c55e';
+
+    // Nếu chạy xong
+    if (!data.running && data.currentAction !== "Chờ lệnh...") {
+      clearInterval(questPoller);
+      $('btnQuest').disabled = false;
+      $('btnQuest').innerText = "Kiểm tra & Chạy AutoQuest";
+      $('quest-status').innerText = data.currentAction;
+      $('quest-status').style.color = data.currentAction === "Hoàn thành" ? '#22c55e' : '#ef4444';
+    }
+  } catch (e) {}
 }
 
 setInterval(checkStatus, 3000);
