@@ -6,10 +6,12 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ==========================================
+// 1. QUẢN LÝ TRẠNG THÁI RPC
+// ==========================================
 let activeSocket = null;
 let heartbeatTimer = null;
 let rotateTimer = null;
-let isQuestRunning = false;
 
 function stopCurrentSocket() {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
@@ -20,12 +22,8 @@ function stopCurrentSocket() {
   }
 }
 
-// ==========================================
-// PHẦN 1: FAKE RPC (WebSocket)
-// ==========================================
 app.post('/api/start', (req, res) => {
   stopCurrentSocket(); 
-  
   const data = req.body;
   if (!data.token) return res.status(400).json({ error: 'Thiếu token' });
 
@@ -104,21 +102,28 @@ app.post('/api/start', (req, res) => {
       }, pkt.d.heartbeat_interval);
 
       const identifyProps = { os: data.platform || 'desktop', browser: 'Chrome', device: '' };
+      
       ws.send(JSON.stringify({
         op: 2,
         d: {
           token: data.token,
           capabilities: 16381,
           properties: identifyProps,
-          presence: { status: data.status || 'online', since: 0, activities: [buildActivity()], afk: false }
+          presence: {
+            status: data.status || 'online',
+            since: 0,
+            activities: [buildActivity()],
+            afk: false
+          }
         }
       }));
-      if (!res.headersSent) res.json({ ok: true, msg: 'Đã kết nối RPC' });
+      if (!res.headersSent) res.json({ ok: true, msg: 'Đã kết nối' });
     }
     
     if (pkt.t === 'READY') {
       ws.send(JSON.stringify({ op: 3, d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false } }));
     }
+
     if (pkt.op === 9) stopCurrentSocket();
   });
 
@@ -136,8 +141,16 @@ app.get('/api/status', (req, res) => {
 });
 
 // ==========================================
-// PHẦN 2: AUTOQUEST (Dùng Fetch của Node)
+// 2. AUTOQUEST (CÓ TIẾN TRÌNH & LOG)
 // ==========================================
+let questState = {
+  running: false,
+  logs: [],
+  total: 0,
+  completed: 0,
+  currentAction: "Chờ lệnh..."
+};
+
 const getQuestHeaders = (token) => {
   const sp = Buffer.from(JSON.stringify({
     os: "Windows", browser: "Discord Client", release_channel: "stable", client_version: "1.0.9175",
@@ -156,53 +169,99 @@ const getQuestHeaders = (token) => {
   };
 };
 
-async function runAutoQuest(token) {
-  if (isQuestRunning) {
-    console.log("[Quest] Đang chạy tiến trình khác, bỏ qua...");
-    return;
+function addLog(msg) {
+  console.log(msg);
+  questState.logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
+  if (questState.logs.length > 50) questState.logs.shift(); // Giữ tối đa 50 dòng
+}
+
+app.post('/api/validate-token', async (req, res) => {
+  const token = req.body.token;
+  if (!token) return res.status(400).json({ ok: false, msg: 'Thiếu token' });
+
+  try {
+    const r = await fetch("https://discord.com/api/v9/users/@me", {
+      headers: { "Authorization": token, "User-Agent": "Mozilla/5.0" }
+    });
+    if (r.status === 200) {
+      const data = await r.json();
+      return res.json({ ok: true, username: data.username });
+    } else {
+      return res.status(401).json({ ok: false, msg: "Token sai hoặc đã bị block." });
+    }
+  } catch (e) {
+    return res.status(500).json({ ok: false, msg: "Lỗi kết nối tới Discord." });
   }
-  isQuestRunning = true;
-  console.log("[Quest] Bắt đầu AutoQuest cho token:", token.substring(0, 15) + "...");
+});
+
+app.get('/api/quest-status', (req, res) => {
+  res.json(questState);
+});
+
+async function runAutoQuest(token) {
+  questState = { running: true, logs: [], total: 0, completed: 0, currentAction: "Đang kiểm tra token..." };
+  addLog("Bắt đầu AutoQuest...");
   
   const headers = getQuestHeaders(token);
   
   try {
-    // 1. Lấy danh sách quest
+    addLog("Đang lấy danh sách quest...");
     const res = await fetch("https://discord.com/api/v9/quests/@me", { headers });
+    
     if (res.status !== 200) {
-      console.log("[Quest] Lỗi lấy quest, có thể token die.");
-      isQuestRunning = false;
+      addLog("LỖI: Token sai hoặc bị block!");
+      questState.running = false;
+      questState.currentAction = "Lỗi Token";
       return;
     }
+    
     const data = await res.json();
     const quests = Array.isArray(data) ? data : data.quests || [];
     
-    for (const q of quests) {
-      if (q.userStatus?.completedAt) continue; // Đã xong
-      
+    // Lọc quest chưa làm
+    const pendingQuests = quests.filter(q => !q.userStatus?.completedAt);
+    questState.total = pendingQuests.length;
+    
+    if (questState.total === 0) {
+      addLog("Không có quest nào cần làm!");
+      questState.running = false;
+      questState.currentAction = "Hoàn thành";
+      return;
+    }
+    
+    addLog(`Tìm thấy ${questState.total} quest cần làm.`);
+    
+    for (let i = 0; i < pendingQuests.length; i++) {
+      const q = pendingQuests[i];
       const qid = q.id;
       const name = q.config?.messages?.questName || q.config?.messages?.gameTitle || "Quest ẩn danh";
       const taskConfig = q.config?.taskConfig || q.config?.taskConfigV2 || {};
       const tasks = taskConfig.tasks || {};
       const taskType = Object.keys(tasks).find(t => ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY"].includes(t));
       
-      if (!taskType) continue;
+      if (!taskType) {
+        addLog(`[${i+1}/${questState.total}] Bỏ qua ${name} (Loại quest không hỗ trợ).`);
+        questState.completed++;
+        continue;
+      }
+
+      questState.currentAction = `Đang xử lý: ${name}`;
       
-      // 2. Enroll nếu chưa nhận
+      // Enroll
       if (!q.userStatus?.enrolledAt) {
-        console.log(`[Quest] Đang nhận quest: ${name}`);
+        addLog(`[${i+1}/${questState.total}] Nhận quest: ${name}`);
         await fetch(`https://discord.com/api/v9/quests/${qid}/enroll`, {
           method: 'POST', headers, body: JSON.stringify({ location: 11, is_targeted: false })
         });
         await new Promise(r => setTimeout(r, 2000));
       }
 
-      // 3. Làm quest (Chỉ fake được WATCH_VIDEO)
+      // Làm quest
       if (taskType === "WATCH_VIDEO") {
         let needed = tasks[taskType]?.target || 0;
         let done = q.userStatus?.progress?.[taskType]?.value || 0;
         
-        console.log(`[Quest] Bắt đầu cày video: ${name} (${done}/${needed}s)`);
+        addLog(`[${i+1}/${questState.total}] Cày video: ${name} (${Math.floor(done)}/${needed}s)`);
         let timeout = 0;
         
         while (done < needed && timeout < 100) {
@@ -215,20 +274,27 @@ async function runAutoQuest(token) {
             const vData = await vRes.json();
             if (vData.completed_at) break;
             done = timestamp;
+            questState.currentAction = `Cày video: ${name} (${Math.floor((done/needed)*100)}%)`;
           }
           await new Promise(r => setTimeout(r, 1000));
           timeout++;
         }
-        console.log(`[Quest] Xong quest video: ${name}`);
+        addLog(`[${i+1}/${questState.total}] Đã xong quest video: ${name}`);
       } else {
-        console.log(`[Quest] Bỏ qua ${name} vì yêu cầu bật app (không fake được).`);
+        addLog(`[${i+1}/${questState.total}] Bỏ qua ${name} (Yêu cầu bật app).`);
       }
+      
+      questState.completed++;
     }
+    
+    addLog("Đã chạy xong toàn bộ quest!");
+    questState.currentAction = "Hoàn thành";
+    
   } catch (err) {
-    console.log("[Quest] Lỗi:", err.message);
+    addLog(`LỖI HỆ THỐNG: ${err.message}`);
+    questState.currentAction = "Lỗi";
   } finally {
-    isQuestRunning = false;
-    console.log("[Quest] Đã chạy xong chu trình AutoQuest.");
+    questState.running = false;
   }
 }
 
@@ -236,10 +302,12 @@ app.post('/api/autoquest', (req, res) => {
   const token = req.body.token;
   if (!token) return res.status(400).json({ ok: false, msg: 'Thiếu token' });
   
-  // Chạy ngầm, không bắt web phải chờ (tránh bị timeout 10s của Render)
-  runAutoQuest(token); 
-  
-  res.json({ ok: true, msg: 'Đã bắt đầu AutoQuest, xem log Render để biết kết quả.' });
+  if (questState.running) {
+    return res.status(400).json({ ok: false, msg: 'AutoQuest đang chạy rồi!' });
+  }
+
+  runAutoQuest(token); // Chạy ngầm
+  res.json({ ok: true, msg: 'Đã bắt đầu' });
 });
 
 const PORT = process.env.PORT || 3000;
