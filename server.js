@@ -30,9 +30,20 @@ app.post('/api/start', (req, res) => {
   let seq = null;
   let idx = 0;
 
-  const fakeStartTime = data.hours > 0 ? Date.now() - (data.hours * 3600 * 1000) : Date.now();
+  let fakeStartTime = Date.now();
+  if (data.hours && parseInt(data.hours) > 0) {
+      const offset = parseInt(data.hours) * 3600 * 1000;
+      const calcTime = Date.now() - offset;
+      if (calcTime > 0) fakeStartTime = calcTime;
+  }
+
   const states = data.states && data.states.length > 0 ? data.states : [''];
   
+  const cleanUrl = (url) => {
+    if (!url) return undefined;
+    return url.split('?')[0]; 
+  };
+
   const buildActivity = () => {
     let actName = (data.name || '').trim();
     if (!actName) actName = 'Visual Studio Code';
@@ -52,16 +63,16 @@ app.post('/api/start', (req, res) => {
     const isDirectImage = (url) => url && /^https?:\/\//i.test(url) && /\.(jpeg|jpg|gif|png|webp)/i.test(url);
     
     if (isDirectImage(data.largeImage)) {
-      act.assets.large_image = data.largeImage;
+      act.assets.large_image = cleanUrl(data.largeImage);
       act.assets.large_text = actName;
     }
     if (isDirectImage(data.smallImage)) {
-      act.assets.small_image = data.smallImage;
+      act.assets.small_image = cleanUrl(data.smallImage);
     }
     if (Object.keys(act.assets).length === 0) delete act.assets;
 
     let btns = [];
-    const isValidUrl = (url) => url && url.startsWith('https://');
+    const isValidUrl = (url) => url && (url.startsWith('https://') || url.startsWith('http://'));
     if (data.btn1 && data.btn1.label && data.btn1.label.trim() && isValidUrl(data.btn1.url)) {
         btns.push({ label: data.btn1.label.trim(), url: data.btn1.url.trim() });
     }
@@ -78,6 +89,7 @@ app.post('/api/start', (req, res) => {
       rotateTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           idx++;
+          console.log(`[*] Đang đổi sang dòng: ${states[idx % states.length]}`);
           ws.send(JSON.stringify({
             op: 3,
             d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false }
@@ -99,7 +111,7 @@ app.post('/api/start', (req, res) => {
       const identifyProps = { os: data.platform || 'desktop', browser: 'Chrome', device: '' };
       
       const currentAct = buildActivity();
-      console.log("=> ĐANG GỬI PAYLOAD LÊN DISCORD:", JSON.stringify(currentAct, null, 2));
+      console.log("=> PAYLOAD LÚC BẮT ĐẦU:", JSON.stringify(currentAct, null, 2));
 
       ws.send(JSON.stringify({
         op: 2,
@@ -118,20 +130,24 @@ app.post('/api/start', (req, res) => {
       if (!res.headersSent) res.json({ ok: true, msg: 'Đã kết nối' });
     }
     
+    if (pkt.t === 'READY') {
+      ws.send(JSON.stringify({
+          op: 3,
+          d: { since: 0, activities: [buildActivity()], status: data.status || 'online', afk: false }
+      }));
+    }
+
     if (pkt.op === 9) {
-      console.log("=> LỖI TỪ DISCORD (Op 9 - Invalid Session):", pkt.d);
       stopCurrentSocket();
     }
   });
 
-  ws.on('close', (code, reason) => {
-    console.log(`=> ĐÓNG KẾT NỐI: Code ${code} - Lý do: ${reason.toString() || 'Không có lý do'}`);
+  ws.on('close', () => {
     clearInterval(heartbeatTimer);
     clearInterval(rotateTimer);
   });
   
   ws.on('error', (err) => {
-    console.error("=> LỖI WEBSOCKET:", err.message);
     stopCurrentSocket();
     if (!res.headersSent) res.status(500).json({ error: err.message });
   });
