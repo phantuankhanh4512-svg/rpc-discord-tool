@@ -141,7 +141,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // ==========================================
-// 2. AUTOQUEST (CÓ TIẾN TRÌNH & LOG)
+// 2. AUTOQUEST (FIX LỖI NHẬN DIỆN TASK)
 // ==========================================
 let questState = {
   running: false,
@@ -172,7 +172,7 @@ const getQuestHeaders = (token) => {
 function addLog(msg) {
   console.log(msg);
   questState.logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
-  if (questState.logs.length > 50) questState.logs.shift(); // Giữ tối đa 50 dòng
+  if (questState.logs.length > 50) questState.logs.shift();
 }
 
 app.post('/api/validate-token', async (req, res) => {
@@ -218,7 +218,7 @@ async function runAutoQuest(token) {
     const data = await res.json();
     const quests = Array.isArray(data) ? data : data.quests || [];
     
-    // Lọc quest chưa làm
+    // Chỉ lấy quest chưa hoàn thành
     const pendingQuests = quests.filter(q => !q.userStatus?.completedAt);
     questState.total = pendingQuests.length;
     
@@ -234,13 +234,24 @@ async function runAutoQuest(token) {
     for (let i = 0; i < pendingQuests.length; i++) {
       const q = pendingQuests[i];
       const qid = q.id;
-      const name = q.config?.messages?.questName || q.config?.messages?.gameTitle || "Quest ẩn danh";
+      
+      // Bóc tách tên Quest chuẩn xác hơn
+      const name = q.config?.messages?.questName || 
+                   q.config?.messages?.gameTitle || 
+                   q.config?.application?.name || 
+                   "Quest ẩn danh";
+
       const taskConfig = q.config?.taskConfig || q.config?.taskConfigV2 || {};
       const tasks = taskConfig.tasks || {};
-      const taskType = Object.keys(tasks).find(t => ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY"].includes(t));
+      const taskKeys = Object.keys(tasks);
+      
+      // Fix cứng các task type được hỗ trợ
+      const supported = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY"];
+      const taskType = taskKeys.find(t => supported.includes(t));
       
       if (!taskType) {
-        addLog(`[${i+1}/${questState.total}] Bỏ qua ${name} (Loại quest không hỗ trợ).`);
+        // Log in ra các keys lạ để Sam biết Discord đang trả về cái gì
+        addLog(`[${i+1}/${questState.total}] Bỏ qua ${name} (Task lạ: ${taskKeys.join(', ') || 'Trống'})`);
         questState.completed++;
         continue;
       }
@@ -249,7 +260,7 @@ async function runAutoQuest(token) {
       
       // Enroll
       if (!q.userStatus?.enrolledAt) {
-        addLog(`[${i+1}/${questState.total}] Nhận quest: ${name}`);
+        addLog(`[${i+1}/${questState.total}] Nhận quest: ${name} (${taskType})`);
         await fetch(`https://discord.com/api/v9/quests/${qid}/enroll`, {
           method: 'POST', headers, body: JSON.stringify({ location: 11, is_targeted: false })
         });
@@ -257,7 +268,7 @@ async function runAutoQuest(token) {
       }
 
       // Làm quest
-      if (taskType === "WATCH_VIDEO") {
+      if (taskType === "WATCH_VIDEO" || taskType === "WATCH_VIDEO_ON_MOBILE") {
         let needed = tasks[taskType]?.target || 0;
         let done = q.userStatus?.progress?.[taskType]?.value || 0;
         
@@ -281,7 +292,7 @@ async function runAutoQuest(token) {
         }
         addLog(`[${i+1}/${questState.total}] Đã xong quest video: ${name}`);
       } else {
-        addLog(`[${i+1}/${questState.total}] Bỏ qua ${name} (Yêu cầu bật app).`);
+        addLog(`[${i+1}/${questState.total}] Bỏ qua ${name} (Cần bật app thật).`);
       }
       
       questState.completed++;
@@ -306,7 +317,7 @@ app.post('/api/autoquest', (req, res) => {
     return res.status(400).json({ ok: false, msg: 'AutoQuest đang chạy rồi!' });
   }
 
-  runAutoQuest(token); // Chạy ngầm
+  runAutoQuest(token); 
   res.json({ ok: true, msg: 'Đã bắt đầu' });
 });
 
